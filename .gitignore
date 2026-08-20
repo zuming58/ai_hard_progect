@@ -14,3 +14,7 @@ Thumbs.db
 
 # Used only while preserving nested repository metadata during top-level staging.
 **/.git-codex-preserved/
+
+# Private reference captures may contain account or LAN information.
+**/*-私密.*
+**/*-私密/

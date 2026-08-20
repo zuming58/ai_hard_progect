@@ -1,0 +1,40 @@
+{
+  "runId": "deskmate-ui-demo-v0.1",
+  "figmaFileKey": "DRCqD12JUJQMNEV7llZKW5",
+  "figmaFileUrl": "https://www.figma.com/design/DRCqD12JUJQMNEV7llZKW5",
+  "phase": "phase-1-preview-approved-pending",
+  "phase0": {
+    "status": "completed",
+    "referenceStyle": "dark-graphite-sidebar-light-futuristic-workspace-cyan-cobalt-accent",
+    "fonts": {
+      "latin": "Inter",
+      "cjk": "Noto Sans SC"
+    },
+    "sourceCodeConnect": "not-applicable-no-product-ui-codebase-yet",
+    "existingFigmaScreens": "not-applicable-new-blank-file",
+    "libraryDecision": "build-local-brand-components; use Material 3 only as interaction-reference",
+    "hardwareProtocolBoundary": "unknown-protocol-states-will-be-labeled-demo-or-pending-integration"
+  },
+  "plannedPages": [
+    "工作台",
+    "语音输入",
+    "历史记录",
+    "词库",
+    "按键配置",
+    "设备与连接",
+    "AI联动",
+    "表情库",
+    "表情编辑",
+    "动作编排",
+    "环境感知",
+    "设置与诊断"
+  ],
+  "preview": {
+    "screen": "工作台",
+    "frameId": "4:2",
+    "size": "1440x1024",
+    "status": "completed-and-validated",
+    "localPreview": "F:/Codex/ai hardware/项目设计/Figma-工作台-首页预览-v0.1.png"
+  },
+  "updatedAt": "2026-08-20T00:30:00+08:00"
+}
