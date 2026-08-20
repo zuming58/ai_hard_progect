@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="760" viewBox="0 0 720 760" role="img" aria-labelledby="title desc">
+  <title id="title">EasyInput 当前开发板进入下载模式</title>
+  <desc id="desc">保持开发板开机，短按并松开 BOOT，等待电脑出现 ESP32-S3 下载端口。无需长按或重新上电，进入 BOOT 也不等于获得烧录授权。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
+      <path d="M0 0L12 6L0 12Z" fill="#17642f"/>
+    </marker>
+  </defs>
+  <rect width="720" height="760" fill="#f5f6f1"/>
+  <text x="40" y="46" fill="#17642f" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="800" letter-spacing="2">BOOT / CURRENT BOARD</text>
+  <text x="40" y="96" fill="#101410" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="40" font-weight="800">短按、松开、进入下载模式。</text>
+  <line x1="40" y1="122" x2="680" y2="122" stroke="#c9cec6"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
+    <circle cx="72" cy="208" r="27" fill="#17642f"/>
+    <text x="72" y="217" fill="#ffffff" text-anchor="middle" font-size="26" font-weight="800">1</text>
+    <circle cx="154" cy="208" r="38" fill="none" stroke="#101410" stroke-width="5"/>
+    <line x1="154" y1="155" x2="154" y2="207" stroke="#b42318" stroke-width="8" stroke-linecap="round"/>
+    <text x="222" y="198" fill="#101410" font-size="31" font-weight="800">保持开发板开机</text>
+    <text x="222" y="236" fill="#59655e" font-size="26">不用关机，也不用重新上电</text>
+
+    <line x1="360" y1="270" x2="360" y2="306" stroke="#17642f" stroke-width="4" marker-end="url(#arrow)"/>
+
+    <circle cx="72" cy="377" r="27" fill="#17642f"/>
+    <text x="72" y="386" fill="#ffffff" text-anchor="middle" font-size="26" font-weight="800">2</text>
+    <rect x="116" y="339" width="76" height="76" fill="none" stroke="#101410" stroke-width="5"/>
+    <rect x="133" y="323" width="42" height="31" fill="#b42318"/>
+    <line x1="154" y1="307" x2="154" y2="286" stroke="#b42318" stroke-width="4"/>
+    <text x="222" y="367" fill="#101410" font-size="31" font-weight="800">短按 BOOT 并松开</text>
+    <text x="222" y="405" fill="#59655e" font-size="26">一次完整的按下与释放</text>
+
+    <line x1="360" y1="440" x2="360" y2="476" stroke="#17642f" stroke-width="4" marker-end="url(#arrow)"/>
+
+    <circle cx="72" cy="547" r="27" fill="#17642f"/>
+    <text x="72" y="556" fill="#ffffff" text-anchor="middle" font-size="26" font-weight="800">3</text>
+    <rect x="113" y="506" width="82" height="82" fill="none" stroke="#101410" stroke-width="5"/>
+    <line x1="131" y1="529" x2="178" y2="529" stroke="#17642f" stroke-width="5"/>
+    <line x1="131" y1="548" x2="170" y2="548" stroke="#17642f" stroke-width="5"/>
+    <line x1="131" y1="567" x2="162" y2="567" stroke="#17642f" stroke-width="5"/>
+    <text x="222" y="537" fill="#101410" font-size="31" font-weight="800">电脑出现下载端口</text>
+    <text x="222" y="575" fill="#59655e" font-size="26">识别为 ESP32-S3 下载设备</text>
+  </g>
+
+  <rect x="40" y="650" width="640" height="70" fill="#fff1ee" stroke="#b42318" stroke-width="2"/>
+  <text x="360" y="681" fill="#b42318" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" font-weight="800">无需长按 · 无需断电重进</text>
+  <text x="360" y="708" fill="#b42318" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" font-weight="800">BOOT ≠ 烧录授权</text>
+</svg>

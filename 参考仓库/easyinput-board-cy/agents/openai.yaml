@@ -1,0 +1,4 @@
+interface:
+  display_name: "EasyInput 开发板知识"
+  short_description: "EasyInput 开发板知识、硬件资料与 AI 开发上下文"
+  default_prompt: "使用 $easyinput-board-cy 读取当前任务所需的 EasyInput 开发板硬件事实、未知项和板级安全边界，并把这些上下文交还给总体任务。"
