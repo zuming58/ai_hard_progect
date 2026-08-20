@@ -1,0 +1,16 @@
+# Local polling state contains machine-specific chat identifiers.
+.polling_state.json
+
+# ESP-IDF and Python generated files.
+**/build/
+**/__pycache__/
+*.py[cod]
+
+# Local editor and OS state.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Used only while preserving nested repository metadata during top-level staging.
+**/.git-codex-preserved/

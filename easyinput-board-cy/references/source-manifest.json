@@ -1,0 +1,316 @@
+{
+  "schema_version": 2,
+  "scope": "maintenance_provenance_only_no_runtime_dependency",
+  "snapshot_date": "2026-08-05",
+  "board_contract": "board-contract.json",
+  "source_kind": "internal_hardware_archive",
+  "source_revision": "f151d1f6084b7755a9ecfea80bab8deaf5ff41d1",
+  "rights_and_licensing": {
+    "software_license_path": "../LICENSE",
+    "software_spdx": "PolyForm-Noncommercial-1.0.0",
+    "required_notice_path": "../NOTICE",
+    "asset_license_path": "../ASSET-LICENSE.md",
+    "asset_spdx": "CC-BY-NC-4.0",
+    "asset_spdx_scope": "covered_project_authored_rights_and_mixed_asset_components_only",
+    "attribution": "EasyInput / CY-CHENYUE",
+    "scope_limit": "only_to_the_extent_the_repository_licensor_owns_or_is_authorized_to_license_the_applicable_rights",
+    "excluded_assets": [
+      "../assets/brand-wuqiwangxiang-black.png",
+      "../assets/brand-waytoagi-black.png",
+      "../assets/wechat-qr.jpg"
+    ],
+    "excluded_rights_categories": [
+      "brand_and_trademark_rights",
+      "contact_qr_reuse_rights",
+      "third_party_embedded_material"
+    ],
+    "mixed_assets": [
+      "../assets/easyinput-v2-schematic-page-1-branded.svg",
+      "../assets/easyinput-v2-schematic-page-2-branded.svg",
+      "../assets/easyinput-v2-schematic-page-1-branded.png",
+      "../assets/easyinput-v2-schematic-page-2-branded.png",
+      "../assets/easyinput-v2-pcb-top.png",
+      "../assets/easyinput-v2-pcb-bottom.png",
+      "../assets/readme/render/hero.png",
+      "../assets/readme/render/review-board.png",
+      "../assets/readme/render/github-light.png",
+      "../assets/readme/render/github-dark.png",
+      "../assets/readme/render/preview-900.png",
+      "../assets/readme/render/preview-360.png",
+      "../assets/readme/render/preview-240.png",
+      "../assets/readme/page/desktop.png",
+      "../assets/readme/page/mobile.png"
+    ]
+  },
+  "behavior_overrides": [
+    {
+      "id": "boot-one-tap-entry",
+      "authority": "board_owner_confirmed_current_physical_board_behavior",
+      "confirmed_at": "2026-08-05",
+      "enter": "powered on; tap and release BOOT once",
+      "exit": "power off; power on",
+      "supersedes": "legacy hold-BOOT-during-power-on text"
+    }
+  ],
+  "packaged_assets": [
+    {
+      "path": "../assets/easyinput-v2-schematic-page-1.png",
+      "sha256": "0e4d0edd683170be3a700f02a250515d19ca49c14f8d8bcbb87606313c9310b4",
+      "bytes": 408038,
+      "width": 2424,
+      "height": 1610,
+      "license": "CC-BY-NC-4.0",
+      "asset_license_scope": "covered",
+      "attribution": "EasyInput / CY-CHENYUE",
+      "rights_status": "license_grant_limited_to_licensor_owned_or_authorized_components"
+    },
+    {
+      "path": "../assets/easyinput-v2-schematic-page-2.png",
+      "sha256": "140f737521d6527e5c233e308e580d8ba0d522645334a00bcbc187eede0d2bfc",
+      "bytes": 463906,
+      "width": 2470,
+      "height": 1594,
+      "license": "CC-BY-NC-4.0",
+      "asset_license_scope": "covered",
+      "attribution": "EasyInput / CY-CHENYUE",
+      "rights_status": "license_grant_limited_to_licensor_owned_or_authorized_components"
+    },
+    {
+      "path": "../assets/easyinput-v2-pcb-top.png",
+      "sha256": "a3f1b06db6d44db51447e43a7be6e914e6d903633c15634b0aa1f8ec85c73a56",
+      "bytes": 98596,
+      "width": 2560,
+      "height": 1119,
+      "license": "NOASSERTION",
+      "asset_license_scope": "mixed",
+      "rights_status": "mixed_asset_components_retain_separate_rights",
+      "component_licenses": {
+        "project_authored_pcb_and_snapshot_expression": "CC-BY-NC-4.0",
+        "embedded_brand_mark_and_other_third_party_components": "NOASSERTION"
+      },
+      "attribution_for_cc_components": "EasyInput / CY-CHENYUE"
+    },
+    {
+      "path": "../assets/easyinput-v2-pcb-bottom.png",
+      "sha256": "8faa6b18b0fecce89e5d637cc4900cea0d40ff37bda5c9fd721e4b1fdf6c4b1c",
+      "bytes": 152867,
+      "width": 2560,
+      "height": 1125,
+      "license": "NOASSERTION",
+      "asset_license_scope": "mixed",
+      "rights_status": "mixed_asset_components_retain_separate_rights",
+      "component_licenses": {
+        "project_authored_pcb_and_snapshot_expression": "CC-BY-NC-4.0",
+        "embedded_brand_mark_and_other_third_party_components": "NOASSERTION"
+      },
+      "attribution_for_cc_components": "EasyInput / CY-CHENYUE"
+    }
+  ],
+  "branding_inputs": [
+    {
+      "path": "../assets/brand-wuqiwangxiang-black.png",
+      "sha256": "bbce977801f7387a5ab2bca46b70c0766aa6e5cae0e5a18e06cb5f402eebc89d",
+      "bytes": 7523,
+      "width": 612,
+      "height": 282,
+      "role": "user_provided_presentation_asset_not_hardware_evidence",
+      "license": "NOASSERTION",
+      "asset_license_scope": "excluded",
+      "rights_status": "separate_brand_and_trademark_rights_not_granted"
+    },
+    {
+      "path": "../assets/brand-waytoagi-black.png",
+      "sha256": "011558c65de53c20faa8ee8b1f779986e7f412d658cc4695678efce467968ac0",
+      "bytes": 20740,
+      "width": 1268,
+      "height": 405,
+      "role": "user_provided_presentation_asset_not_hardware_evidence",
+      "license": "NOASSERTION",
+      "asset_license_scope": "excluded",
+      "rights_status": "separate_brand_and_trademark_rights_not_granted"
+    }
+  ],
+  "presentation_derivatives": [
+    {
+      "path": "../assets/easyinput-v2-schematic-page-1-branded.svg",
+      "sha256": "1a1b2b929e41803e11c5cffa2a17785603349f23fc433949f50441d45c31426a",
+      "bytes": 2098,
+      "width": 2424,
+      "height": 1610,
+      "derived_from": [
+        "../assets/easyinput-v2-schematic-page-1.png",
+        "../assets/brand-wuqiwangxiang-black.png",
+        "../assets/brand-waytoagi-black.png"
+      ],
+      "edit_scope": "editable_source_coordinate_overlay_inside_title_block_only",
+      "license": "NOASSERTION",
+      "asset_license_scope": "mixed",
+      "rights_status": "mixed_asset_components_retain_separate_rights",
+      "component_licenses": {
+        "underlying_schematic_and_project_authored_treatment": "CC-BY-NC-4.0",
+        "brand_marks": "NOASSERTION"
+      },
+      "excluded_components": [
+        "../assets/brand-wuqiwangxiang-black.png",
+        "../assets/brand-waytoagi-black.png"
+      ]
+    },
+    {
+      "path": "../assets/easyinput-v2-schematic-page-2-branded.svg",
+      "sha256": "fe433168eac2fe808fdf4048ffc472d74a1bcd53e8d2d205575b5e29d09b0263",
+      "bytes": 2109,
+      "width": 2470,
+      "height": 1594,
+      "derived_from": [
+        "../assets/easyinput-v2-schematic-page-2.png",
+        "../assets/brand-wuqiwangxiang-black.png",
+        "../assets/brand-waytoagi-black.png"
+      ],
+      "edit_scope": "editable_source_coordinate_overlay_inside_title_block_only",
+      "license": "NOASSERTION",
+      "asset_license_scope": "mixed",
+      "rights_status": "mixed_asset_components_retain_separate_rights",
+      "component_licenses": {
+        "underlying_schematic_and_project_authored_treatment": "CC-BY-NC-4.0",
+        "brand_marks": "NOASSERTION"
+      },
+      "excluded_components": [
+        "../assets/brand-wuqiwangxiang-black.png",
+        "../assets/brand-waytoagi-black.png"
+      ]
+    },
+    {
+      "path": "../assets/easyinput-v2-schematic-page-1-branded.png",
+      "sha256": "11584520953bbbebd1e6649d14747334a874ebae1ce1cbaef8bf108f1b262b45",
+      "bytes": 325704,
+      "width": 2424,
+      "height": 1610,
+      "derived_from": [
+        "../assets/easyinput-v2-schematic-page-1.png",
+        "../assets/easyinput-v2-schematic-page-1-branded.svg"
+      ],
+      "edit_scope": "pixel_composite_inside_title_block_only",
+      "changed_pixels_inside_title_block": 20817,
+      "changed_pixels_outside_title_block": 0,
+      "license": "NOASSERTION",
+      "asset_license_scope": "mixed",
+      "rights_status": "mixed_asset_components_retain_separate_rights",
+      "component_licenses": {
+        "underlying_schematic_and_project_authored_treatment": "CC-BY-NC-4.0",
+        "brand_marks": "NOASSERTION"
+      },
+      "excluded_components": [
+        "../assets/brand-wuqiwangxiang-black.png",
+        "../assets/brand-waytoagi-black.png"
+      ]
+    },
+    {
+      "path": "../assets/easyinput-v2-schematic-page-2-branded.png",
+      "sha256": "53d71f6c526e985ad2b5ee130306ddac8e58b23deb21a036cfdee630d6d474d9",
+      "bytes": 376916,
+      "width": 2470,
+      "height": 1594,
+      "derived_from": [
+        "../assets/easyinput-v2-schematic-page-2.png",
+        "../assets/easyinput-v2-schematic-page-2-branded.svg"
+      ],
+      "edit_scope": "pixel_composite_inside_title_block_only",
+      "changed_pixels_inside_title_block": 20817,
+      "changed_pixels_outside_title_block": 0,
+      "license": "NOASSERTION",
+      "asset_license_scope": "mixed",
+      "rights_status": "mixed_asset_components_retain_separate_rights",
+      "component_licenses": {
+        "underlying_schematic_and_project_authored_treatment": "CC-BY-NC-4.0",
+        "brand_marks": "NOASSERTION"
+      },
+      "excluded_components": [
+        "../assets/brand-wuqiwangxiang-black.png",
+        "../assets/brand-waytoagi-black.png"
+      ]
+    },
+    {
+      "path": "../assets/schematic-branding-preview.html",
+      "sha256": "549f0b4b55b4b0fb540a39940824af11acce72f575d51006157f8587738a9f42",
+      "bytes": 1494,
+      "derived_from": [
+        "../assets/easyinput-v2-schematic-page-1-branded.svg",
+        "../assets/easyinput-v2-schematic-page-2-branded.svg"
+      ],
+      "role": "local_side_by_side_review_only",
+      "license": "PolyForm-Noncommercial-1.0.0",
+      "asset_license_scope": "software",
+      "required_notice": "../NOTICE"
+    }
+  ],
+  "excluded_asset_records": [
+    {
+      "path": "../assets/wechat-qr.jpg",
+      "sha256": "9daa1588d879a2572aefd7dcd7327208b5bb8110f2a7f6e9a9e6e7b1615d16e3",
+      "bytes": 27183,
+      "width": 258,
+      "height": 258,
+      "license": "NOASSERTION",
+      "asset_license_scope": "excluded",
+      "rights_status": "contact_qr_separate_rights_not_granted"
+    }
+  ],
+  "generated_visual_asset_rules": [
+    {
+      "paths": [
+        "../assets/readme/sections/boot-flow.svg",
+        "../assets/readme/sections/gpio8-shared-rail.svg",
+        "../assets/readme/sections/verification-ladder.svg"
+      ],
+      "license": "CC-BY-NC-4.0",
+      "asset_license_scope": "covered",
+      "attribution": "EasyInput / CY-CHENYUE",
+      "rights_status": "license_grant_limited_to_licensor_owned_or_authorized_components"
+    },
+    {
+      "paths": [
+        "../assets/readme/render/hero.png",
+        "../assets/readme/render/review-board.png",
+        "../assets/readme/render/github-light.png",
+        "../assets/readme/render/github-dark.png",
+        "../assets/readme/render/preview-900.png",
+        "../assets/readme/render/preview-360.png",
+        "../assets/readme/render/preview-240.png"
+      ],
+      "license": "NOASSERTION",
+      "asset_license_scope": "mixed",
+      "rights_status": "mixed_asset_components_retain_separate_rights",
+      "derived_from": [
+        "../assets/easyinput-v2-pcb-top.png"
+      ],
+      "component_licenses": {
+        "project_authored_render_and_pcb_expression": "CC-BY-NC-4.0",
+        "embedded_brand_mark_and_other_unlicensed_components": "NOASSERTION"
+      },
+      "attribution_for_cc_components": "EasyInput / CY-CHENYUE"
+    },
+    {
+      "paths": [
+        "../assets/readme/page/desktop.png",
+        "../assets/readme/page/mobile.png"
+      ],
+      "license": "NOASSERTION",
+      "asset_license_scope": "mixed",
+      "rights_status": "mixed_asset_components_retain_separate_rights",
+      "component_licenses": {
+        "readme_text_and_page_code": "PolyForm-Noncommercial-1.0.0",
+        "project_authored_visual_components": "CC-BY-NC-4.0",
+        "logos_and_qr": "NOASSERTION"
+      }
+    }
+  ],
+  "known_missing": [
+    "canonical ECAD source export",
+    "complete traceable BOM",
+    "Gerber and drill files",
+    "pick-and-place and assembly files",
+    "DRC/ERC reports",
+    "confirmed DNP population for D19/D20",
+    "measured V_LED logic margin and power-current matrix"
+  ]
+}

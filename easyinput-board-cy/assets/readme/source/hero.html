@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="readme-cy-provenance" href="../../../references/source-manifest.json">
+  <title>EasyInput V2.0 Board Knowledge</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+    body {
+      background: #f4f5ef;
+      color: #111713;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    }
+    .plate {
+      position: relative;
+      width: 1200px;
+      height: 700px;
+      overflow: hidden;
+      background: #f4f5ef;
+    }
+    .eyebrow {
+      position: absolute;
+      left: 52px;
+      top: 40px;
+      font: 780 14px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .15em;
+      color: #17642f;
+    }
+    .index {
+      position: absolute;
+      right: 48px;
+      top: 39px;
+      font: 760 12px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .13em;
+      text-align: right;
+      color: #526159;
+    }
+    h1 {
+      position: absolute;
+      left: 50px;
+      top: 76px;
+      margin: 0;
+      font-size: 78px;
+      line-height: .95;
+      letter-spacing: -.06em;
+      font-weight: 900;
+    }
+    .deck {
+      position: absolute;
+      left: 52px;
+      top: 158px;
+      margin: 0;
+      font-size: 27px;
+      line-height: 1.2;
+      font-weight: 720;
+      letter-spacing: -.025em;
+      color: #26332c;
+    }
+    .identity {
+      position: absolute;
+      left: 52px;
+      top: 210px;
+      margin: 0;
+      font: 750 16px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .015em;
+      color: #17642f;
+    }
+    .maxim {
+      position: absolute;
+      right: 48px;
+      top: 166px;
+      margin: 0;
+      font: 780 16px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .08em;
+      text-align: right;
+      color: #e84632;
+    }
+    .rule {
+      position: absolute;
+      left: 48px;
+      right: 48px;
+      top: 245px;
+      height: 1px;
+      background: #cbd0c7;
+    }
+    .board-frame {
+      position: absolute;
+      left: 100px;
+      top: 259px;
+      width: 1000px;
+      height: 433px;
+      margin: 0;
+      padding: 8px;
+      background: #0c120f;
+      border: 1px solid #0c120f;
+    }
+    .board-frame img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #0c120f;
+    }
+    .board-label {
+      position: absolute;
+      left: 112px;
+      bottom: 16px;
+      padding: 5px 7px;
+      background: #0c120f;
+      font: 730 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .12em;
+      color: #f4f5ef;
+    }
+  </style>
+</head>
+<body>
+  <main class="plate">
+    <div class="eyebrow">ONE BOARD / THREE NAMES / ONE KNOWLEDGE BASE</div>
+    <div class="index">CURRENT BOARD KNOWLEDGE<br>ESP32-S3R8 · 8 MB PSRAM · 16 MB FLASH</div>
+    <h1>EasyInput V2.0</h1>
+    <p class="deck">开发板知识与 AI 开发上下文</p>
+    <p class="identity">产品 V2.0 · 固件 v2 · PCB 丝印 AI Keyboard V2.1 → 同一硬件基线</p>
+    <p class="maxim">问板有据<br>开发有界</p>
+    <div class="rule"></div>
+
+    <figure class="board-frame">
+      <img src="../../easyinput-v2-pcb-top.png" alt="EasyInput V2.0 PCB top evidence">
+    </figure>
+    <div class="board-label">PACKAGED PCB TOP · ECAD SNAPSHOT · NOT AN ASSEMBLY PHOTO</div>
+  </main>
+</body>
+</html>

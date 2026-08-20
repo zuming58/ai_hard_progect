@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; img-src &#x27;self&#x27;; style-src &#x27;unsafe-inline&#x27;; font-src &#x27;none&#x27;; connect-src &#x27;none&#x27;; media-src &#x27;none&#x27;; object-src &#x27;none&#x27;; frame-src &#x27;none&#x27;; child-src &#x27;none&#x27;; worker-src &#x27;none&#x27;; manifest-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;">
+<title>EasyInput V2.0 开发板知识与 AI 开发上下文</title>
+<style>:root{color-scheme:light;--fg:#1f2328;--muted:#656d76;--border:#d0d7de;--soft:#f6f8fa;--accent:#0969da;--canvas:#ffffff}
+*{box-sizing:border-box}
+html{background:var(--canvas);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%}
+body{margin:0;min-width:0;color:var(--fg);background:var(--canvas);font-size:16px;line-height:1.5;overflow-x:hidden}
+.page-shell{width:min(1012px,calc(100% - clamp(24px,5vw,64px)));margin:0 auto;padding:32px 0 64px}
+.readme-frame{border:1px solid var(--border);border-radius:6px;background:var(--canvas);overflow:visible}
+.readme-bar{height:48px;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600}
+.readme-bar svg{width:16px;height:16px;fill:currentColor}
+.markdown-body{padding:32px;overflow-wrap:anywhere;word-break:break-word}
+.markdown-body>:first-child{margin-top:0!important}.markdown-body>:last-child{margin-bottom:0!important}
+.markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{margin-top:24px;margin-bottom:16px;font-weight:600;line-height:1.25}
+.markdown-body h1{font-size:2em;padding-bottom:.3em;border-bottom:1px solid #d8dee4}.markdown-body h2{font-size:1.5em;padding-bottom:.3em;border-bottom:1px solid #d8dee4}.markdown-body h3{font-size:1.25em}.markdown-body h4{font-size:1em}.markdown-body h5{font-size:.875em}.markdown-body h6{font-size:.85em;color:var(--muted)}
+.markdown-body p,.markdown-body blockquote,.markdown-body ul,.markdown-body ol,.markdown-body dl,.markdown-body table,.markdown-body pre,.markdown-body details{margin-top:0;margin-bottom:16px}
+.markdown-body a{color:var(--accent);text-decoration:none}.markdown-body a:hover{text-decoration:underline}
+.markdown-body strong{font-weight:600}.markdown-body hr{height:.25em;padding:0;margin:24px 0;background:#d8dee4;border:0}
+.markdown-body blockquote{padding:0 1em;color:var(--muted);border-left:.25em solid #d0d7de}.markdown-body blockquote>:last-child{margin-bottom:0}
+.markdown-body ul,.markdown-body ol{padding-left:2em}.markdown-body li+li{margin-top:.25em}.markdown-body li>p{margin-top:16px}
+.markdown-body code,.markdown-body tt{padding:.2em .4em;margin:0;font:85% ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;background:rgba(175,184,193,.2);border-radius:6px}
+.markdown-body pre{padding:16px;overflow:auto;font:85%/1.45 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;background:var(--soft);border-radius:6px;white-space:pre}
+.markdown-body pre code{display:inline;max-width:auto;padding:0;margin:0;overflow:visible;line-height:inherit;word-wrap:normal;background:transparent;border:0}
+.markdown-body table{display:block;width:max-content;max-width:100%;overflow:auto;border-spacing:0;border-collapse:collapse}.markdown-body th{font-weight:600}.markdown-body th,.markdown-body td{padding:6px 13px;border:1px solid var(--border)}.markdown-body tr{background:var(--canvas);border-top:1px solid #d8dee4}.markdown-body tr:nth-child(2n){background:var(--soft)}
+.markdown-body img{display:block;max-width:100%;height:auto;margin:0 auto;background:var(--canvas)}
+.markdown-body details{padding:8px 12px;border:1px solid var(--border);border-radius:6px}.markdown-body summary{cursor:pointer;font-weight:600}.markdown-body details[open] summary{margin-bottom:8px}
+.markdown-body kbd{display:inline-block;padding:3px 5px;font:11px ui-monospace,SFMono-Regular,Consolas,monospace;line-height:10px;color:var(--fg);vertical-align:middle;background:var(--soft);border:1px solid #afb8c1;border-bottom-color:#8c959f;border-radius:6px;box-shadow:inset 0 -1px 0 #8c959f}
+.markdown-body input[type=checkbox]{margin:0 .5em 0 -1.4em;vertical-align:middle}.markdown-body input[disabled]{opacity:1}</style>
+</head>
+<body>
+<main class="page-shell">
+<section class="readme-frame" aria-label="README preview">
+<header class="readme-bar"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.5c.69 0 1.35.3 1.8.83.45-.52 1.1-.83 1.8-.83h4.4a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.4c-.43 0-.83.17-1.13.47l-.14.14a.75.75 0 0 1-1.06 0l-.14-.14A1.6 1.6 0 0 0 5.25 13H.75a.75.75 0 0 1-.75-.75Zm1.5.75v9h3.75c.35 0 .69.07 1 .2V3.43A1.1 1.1 0 0 0 5.25 2.5Zm6.25.93v8.27c.35-.13.7-.2 1.1-.2h3.65v-9H8.85c-.43 0-.83.26-1.1.93Z"/></svg>README</header>
+<article class="markdown-body"><p><img src="../render/hero.png" alt="EasyInput V2.0 板级证据首页：PCB 顶视图展示 8 个主按键位、旋转编码器位和 AI Keyboard V2.1 丝印；V2.0、固件 v2 与 V2.1 丝印属于同一硬件基线"></p>
+<h1 id="easyinput-v20-开发板知识与-ai-开发上下文">EasyInput V2.0 开发板知识与 AI 开发上下文</h1>
+<blockquote>
+<p>面向 <code>EasyInput V2.0</code>／固件板型别名 <code>v2</code>／PCB 丝印 <code>AI Keyboard V2.1</code> 的项目中立开发板知识库、硬件资料与板级安全边界入口。</p>
+</blockquote>
+<p><code>easyinput-board-cy</code> 有两个用途：用户可以直接向它查询当前开发板的身份、GPIO、BOOT、共享电源和板载外设等已确认信息；AI 在其他开发任务中可以先加载这些硬件事实与安全边界，再由目标项目决定具体实现。</p>
+<p>它本身不负责创建项目、编写或修改代码、安装工具链、构建、烧录或监视串口。它也不提供任何既有应用的业务默认值，不会因为工作区里存在其他 EasyInput 工程就主动读取或推荐它们。</p>
+<h2 id="一块板三个名字">一块板，三个名字</h2>
+<table>
+<thead>
+<tr>
+<th>使用场景</th>
+<th>当前名称</th>
+<th>README 中的含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>产品与课程</td>
+<td><code>EasyInput V2.0</code></td>
+<td>对外使用的产品名</td>
+</tr>
+<tr>
+<td>固件板型</td>
+<td><code>v2</code> / <code>V2</code></td>
+<td>指向当前硬件基线的别名</td>
+</tr>
+<tr>
+<td>PCB 丝印</td>
+<td><code>AI Keyboard V2.1</code></td>
+<td>同一块板上的历史丝印，不是另一套 pinout</td>
+</tr>
+</tbody>
+</table>
+<p>结构件 V25／V26 同样不代表新的电气板版本。看到这些名称时应先归一到当前板级合同，再开始选择引脚或实现项目行为。</p>
+<h2 id="随-skill-打包的板级证据">随 Skill 打包的板级证据</h2>
+<p>下面是当前 Skill 内保存的 ECAD／PCB 快照，不是装配实拍，也不等同于最终制造资料。点击图片可查看原尺寸。</p>
+<table>
+  <tbody><tr>
+    <td width="50%">
+      <a href="../../easyinput-v2-pcb-top.png" rel="noopener noreferrer"><img src="../../easyinput-v2-pcb-top.png" alt="EasyInput 当前板 PCB 顶面 ECAD 快照，显示 8 个主按键位和旋转编码器位"></a><br>
+      <sub><strong>PCB TOP</strong> · 当前板顶面证据</sub>
+    </td>
+    <td width="50%">
+      <a href="../../easyinput-v2-pcb-bottom.png" rel="noopener noreferrer"><img src="../../easyinput-v2-pcb-bottom.png" alt="EasyInput 当前板 PCB 底面 ECAD 快照"></a><br>
+      <sub><strong>PCB BOTTOM</strong> · 当前板底面证据</sub>
+    </td>
+  </tr>
+</tbody></table>
+<details>
+  <summary><strong>展开两页原理图（品牌标题栏版）</strong></summary>
+  <p>下面的展示版只在标题栏内增加两方品牌标识与产品标题；元件、网络、页码和标题栏外像素均保持原始快照不变。硬件判断仍以 <a href="../../easyinput-v2-schematic-page-1.png" rel="noopener noreferrer">第 1 页原始证据</a> 与 <a href="../../easyinput-v2-schematic-page-2.png" rel="noopener noreferrer">第 2 页原始证据</a> 为准，缩略图里的小字不作为判断依据。</p>
+  <p><a href="../../easyinput-v2-schematic-page-1-branded.png" rel="noopener noreferrer"><img src="../../easyinput-v2-schematic-page-1-branded.png" alt="EasyInput V2.0 原理图第 1 页品牌标题栏展示版"></a></p>
+  <p><a href="../../easyinput-v2-schematic-page-2-branded.png" rel="noopener noreferrer"><img src="../../easyinput-v2-schematic-page-2-branded.png" alt="EasyInput V2.0 原理图第 2 页品牌标题栏展示版"></a></p>
+</details>
+<p>快照日期、来源路径、尺寸和 SHA-256 记录在 <a href="../../../references/source-manifest.json" rel="noopener noreferrer">source-manifest.json</a>。当前资料缺少最终 BOM、Gerber、装配状态与 DRC／ERC，因此不能据此推断 DNP、量产或整机验证结论。</p>
+<h2 id="什么时候使用">什么时候使用</h2>
+<p>适合：</p>
+<ul>
+<li>用户查询或核对当前板的身份、按键、编码器、LED、电池、USB、麦克风、扬声器、唤醒引脚与 BOOT 操作；</li>
+<li>AI 在开发前读取当前板的 GPIO、有效电平、共享电源、保留资源和安全边界；</li>
+<li>区分不可改变的硬件事实与应由目标项目决定的行为；</li>
+<li>对已有工程做只读的板级基线扫描，为开发任务提供核对线索；</li>
+<li>追溯原理图、PCB 快照、历史资料冲突与当前仍未知的项目。</li>
+</ul>
+<p>不适合：</p>
+<ul>
+<li>其他 ESP32-S3 开发板或仅凭芯片通用 pinout 推断硬件；</li>
+<li>代替开发 Agent 创建工程、编写或修改代码；</li>
+<li>替目标产品决定按键动作、USB 协议、分区、音频参数或睡眠策略；</li>
+<li>代替 <code>esp-idf-cy</code> 安装工具链、识别设备、烧录和监视串口；</li>
+<li>在缺少资料时生成最终 BOM、Gerber、DNP 状态或量产结论。</li>
+</ul>
+<blockquote>
+<p><strong>许可提醒</strong>：项目自有的 Skill、脚本、测试、文档及其他软件内容采用 <a href="../../../LICENSE" rel="noopener noreferrer">PolyForm-Noncommercial-1.0.0</a>；<a href="../../../ASSET-LICENSE.md" rel="noopener noreferrer">ASSET-LICENSE.md</a> 标为 Covered 的资产权利，以及 Mixed 资产中明确标注的项目自有图片版权权益，采用 <a href="../../../ASSET-LICENSE.md" rel="noopener noreferrer">CC BY-NC 4.0</a>。含 Logo 的 PCB 快照／README 首页头图（Hero）、品牌版原理图和整页预览属于混合资产，不能整文件统一按 CC 使用，其余组成部分沿用各自许可或权利状态。两份许可均限制商业用途，允许的对象、行为和保留义务分别以各自完整正文及 <a href="../../../NOTICE" rel="noopener noreferrer">NOTICE</a> 为准。本项目属于 source-available，不是 OSI 开源项目，法定合理使用不受影响。</p>
+</blockquote>
+<h2 id="30-秒开始">30 秒开始</h2>
+<p>从独立仓库安装时，选择你正在使用的 Agent：</p>
+<pre lang="bash"><code># Codex
+git clone https://github.com/CY-CHENYUE/easyinput-board-cy.git \
+  ~/.codex/skills/easyinput-board-cy
+
+# Claude Code（如果使用）
+git clone https://github.com/CY-CHENYUE/easyinput-board-cy.git \
+  ~/.claude/skills/easyinput-board-cy
+</code></pre>
+<p>然后直接说：</p>
+<pre lang="text"><code>使用 easyinput-board-cy，告诉我当前 EasyInput V2.0 的 S1–S8、
+编码器和 BOOT 分别是什么，并标明哪些信息仍未知。
+</code></pre>
+<p>如果你正让 AI 开发另一个项目，可以这样提供上下文：</p>
+<pre lang="text"><code>先使用 easyinput-board-cy 读取当前板与本次功能有关的硬件事实和安全边界，
+再在我指定的项目中继续开发。不要从其他 EasyInput 应用继承业务默认值。
+</code></pre>
+<p>此时 <code>easyinput-board-cy</code> 负责提供开发板上下文；创建项目、写代码和后续验证仍属于外部开发任务。</p>
+<p>第一次正确结果应明确给出：</p>
+<ul>
+<li><code>EasyInput V2.0</code>、<code>v2</code> 与 PCB <code>AI Keyboard V2.1</code> 是同一块当前硬件基线；</li>
+<li>与问题或开发任务直接相关的开发板硬件事实、限制及来源；</li>
+<li>哪些是不可改的硬件事实，哪些仍应由目标项目决定；</li>
+<li>已知冲突或未知项，不用通用 ESP32 经验补猜测；</li>
+<li>若使用 checker，只说明只读静态扫描的结果，不把它写成构建、烧录、日志或 HIL 证据。</li>
+</ul>
+<h2 id="当前板最重要的硬合同">当前板最重要的硬合同</h2>
+<table>
+<thead>
+<tr>
+<th>对象</th>
+<th>当前事实</th>
+<th>不能误写成</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主按键</td>
+<td>S1–S8 = GPIO <code>2, 47, 38, 41, 1, 6, 7, 48</code>，低有效</td>
+<td>GPIO0 是 S5</td>
+</tr>
+<tr>
+<td>编码器</td>
+<td>A/B/按压 = GPIO <code>17/16/18</code></td>
+<td>两个普通“按住键”</td>
+</tr>
+<tr>
+<td>BOOT</td>
+<td>开机状态短按并松开一次；退出时关机再开机</td>
+<td>按住 BOOT 配合上电</td>
+</tr>
+<tr>
+<td>共享电源</td>
+<td>GPIO8 高有效，同时供 LED、麦克风和扬声器</td>
+<td>只控制灯带的开关</td>
+</tr>
+<tr>
+<td>灯</td>
+<td>5 颗 WS2812 串联共用 GPIO12</td>
+<td>5 个独立 GPIO</td>
+</tr>
+<tr>
+<td>原生 USB</td>
+<td>D-/D+ = GPIO <code>19/20</code></td>
+<td>可随意复用的空闲脚</td>
+</tr>
+<tr>
+<td>音频</td>
+<td>麦克风 <code>9/10/11</code>；扬声器 <code>14/13/15</code></td>
+<td>固定 I2S 控制器或采样率</td>
+</tr>
+<tr>
+<td>唤醒</td>
+<td>KEY_WAKE = GPIO21，只表示有输入触发</td>
+<td>能直接识别具体按键</td>
+</tr>
+</tbody>
+</table>
+<p>完整映射只维护在 <a href="../../../references/pinout.md" rel="noopener noreferrer">pinout.md</a> 和机器可读的 <a href="../../../references/board-contract.json" rel="noopener noreferrer">board-contract.json</a> 中；README 不建立第二份完整 GPIO 真相源。</p>
+<h2 id="boot当前实板是一按即进">BOOT：当前实板是一按即进</h2>
+<p><img src="../sections/boot-flow.svg" alt="EasyInput 当前开发板进入下载模式的三步流程：保持开机，短按并松开 BOOT，等待电脑出现 ESP32-S3 下载端口"></p>
+<p>进入下载模式：</p>
+<ol>
+<li>保持开发板开机；</li>
+<li>短按一次 BOOT 并松开；</li>
+<li>等待电脑出现 ESP32-S3 下载端口。</li>
+</ol>
+<p>退出下载模式只需关机一次，再正常开机。板上没有供用户操作的独立 RESET/EN 按键。</p>
+<p>这个操作来自 2026-08-05 对当前实板的确认，覆盖旧资料中的通用“按住 BOOT 再上电”流程。完整说明见 <a href="../../../references/boot-flash-recovery.md" rel="noopener noreferrer">BOOT、烧录与恢复</a>。BOOT 只解决进入下载模式，不构成烧录授权。</p>
+<h2 id="板级事实与项目策略必须分开">板级事实与项目策略必须分开</h2>
+<table>
+<thead>
+<tr>
+<th>板级合同负责</th>
+<th>目标项目负责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开发板身份、SoC、Flash、PSRAM</td>
+<td>ESP-IDF 版本与组件依赖</td>
+</tr>
+<tr>
+<td>GPIO、方向、有效电平、保留引脚</td>
+<td>按键动作、编码器方向与交互</td>
+</tr>
+<tr>
+<td>GPIO8 共享电源和安全顺序</td>
+<td>稳定条件资格确认与运行中关断策略</td>
+</tr>
+<tr>
+<td>BOOT、USB、板载外设物理连线</td>
+<td>USB 身份、协议、分区、NVS、OTA</td>
+</tr>
+<tr>
+<td>原理图、PCB 快照和证据缺口</td>
+<td>音频格式、I2S 控制器、缓冲与并发</td>
+</tr>
+</tbody>
+</table>
+<p>没有用户需求或目标项目声明时，右栏内容保持待定义；不要从其他应用、历史日志或常见 ESP32 示例补默认值。详细边界见 <a href="../../../references/project-boundaries.md" rel="noopener noreferrer">project-boundaries.md</a>。</p>
+<h2 id="对已有-esp-idf-项目做只读核对">对已有 ESP-IDF 项目做只读核对</h2>
+<p>Skill 附带一个可选的只读、启发式静态扫描器，用于从已有工程中寻找可能违反当前板级基线的线索：</p>
+<pre lang="bash"><code>python3 scripts/check_board_baseline.py /path/to/esp-idf-project
+</code></pre>
+<p><img src="../sections/verification-ladder.svg" alt="EasyInput 验证证据阶梯：静态检查、构建、烧录、应用日志和 HIL 是五层独立证据，baseline checker 的 PASS 只到静态层"></p>
+<ul>
+<li><code>FAIL</code>：扫描器按当前已建模规则发现板级冲突；</li>
+<li><code>WARN</code>：扫描无法确认构建分支、时序或其他风险，需要人工核对；</li>
+<li><code>PASS</code>：未发现已建模冲突，不代表原理图、电气安全、构建或 HIL 已通过。</li>
+</ul>
+<p>退出码 <code>0</code> 表示没有 <code>FAIL</code>（可以仍有 <code>WARN</code>），<code>1</code> 表示发现板级冲突，<code>2</code> 表示命令、路径或合同配置错误。</p>
+<p>扫描器不会修改代码、创建工程、构建或操作设备，也不能代替开发者理解真实编译分支。项目可以只使用板载资源的一个子集；没有初始化按键、LED、麦克风或扬声器，不会仅因此失败。</p>
+<h2 id="gpio8共享生命周期不是灯带开关">GPIO8：共享生命周期，不是灯带开关</h2>
+<p><img src="../sections/gpio8-shared-rail.svg" alt="GPIO8 高有效共享电源域同时连接 5 颗 WS2812、I2S 麦克风和 I2S 扬声器；图中分别给出安全上电和关断顺序，固定最短稳定时间仍未知"></p>
+<p>GPIO8 拉高前，先把下游命令输出锁存到安全状态；共享电源稳定后，才能初始化 WS2812、麦克风和扬声器。当前资料不能证明一个对所有器件、项目和开发板批次都成立的固定最短等待时间。</p>
+<p>目标项目必须依据器件规格或实板测量确定自己的稳定条件。运行中若要关断 GPIO8，必须先停止全部共享消费者、清空在途访问并恢复安全引脚状态。完整顺序见 <a href="../../../references/power-and-peripherals.md" rel="noopener noreferrer">power-and-peripherals.md</a>。</p>
+<h2 id="证据冲突与未知项">证据、冲突与未知项</h2>
+<p>冲突判断以当前实板明确确认、可复现的板级验证和可追溯原始资料为先。<code>board-contract.json</code> 是这些证据的规范化机器索引，不会因为机器可读就获得自证能力；若它与原始证据冲突，应回到来源修订合同。完整顺序与已知被取代关系见 <a href="../../../references/identity-and-authority.md" rel="noopener noreferrer">identity-and-authority.md</a>。</p>
+<p>当前仍未知的内容包括最终 BOM、Gerber／钻孔／贴片文件、DRC／ERC、D19／D20 装配状态、V_LED 电平裕量、GPIO8 电源波形和跨批次最短稳定时间。详见 <a href="../../../references/known-gaps-and-errata.md" rel="noopener noreferrer">known-gaps-and-errata.md</a>；图片来源、hash 与快照日期记录在 <a href="../../../references/source-manifest.json" rel="noopener noreferrer">source-manifest.json</a>。</p>
+<h2 id="推荐的信息使用流程">推荐的信息使用流程</h2>
+<ol>
+<li>先确认用户是在查询开发板信息，还是让 AI 为另一个开发任务补充硬件上下文；</li>
+<li>识别 <code>EasyInput V2.0</code>、<code>v2</code> 与 <code>AI Keyboard V2.1</code> 指向同一块当前硬件基线；</li>
+<li>只读取与问题有关的身份、pinout、BOOT、电源或证据 reference；</li>
+<li>输出已确认事实、项目待定项、证据来源和未知项；</li>
+<li>如有指定的已有工程，可选运行 baseline checker 做只读启发式核对；</li>
+<li>将开发板上下文交还给查询者或外部开发任务，不由本 Skill 继续创建项目、写代码、构建或操作设备。</li>
+</ol>
+<p>如果外部开发任务还涉及 ESP-IDF 环境、build、flash、monitor 或设备验身，应另行使用 <code>esp-idf-cy</code>。烧录前仍需 fresh 识别芯片与 MAC，并由用户确认具体目标设备；这些结果不能归功于本 Skill。</p>
+<h2 id="目录">目录</h2>
+<pre lang="text"><code>easyinput-board-cy/
+├── SKILL.md
+├── README.md
+├── DESIGN.md
+├── LICENSE
+├── ASSET-LICENSE.md
+├── NOTICE
+├── agents/openai.yaml
+├── references/
+│   ├── identity-and-authority.md
+│   ├── pinout.md
+│   ├── power-and-peripherals.md
+│   ├── boot-flash-recovery.md
+│   ├── project-boundaries.md
+│   ├── known-gaps-and-errata.md
+│   ├── source-map.md
+│   ├── source-manifest.json
+│   └── board-contract.json
+├── assets/
+│   ├── easyinput-v2-schematic-page-{1,2}.png
+│   ├── easyinput-v2-schematic-page-{1,2}-branded.{svg,png}
+│   ├── brand-{wuqiwangxiang,waytoagi}-black.png
+│   ├── easyinput-v2-pcb-{top,bottom}.png
+│   ├── wechat-qr.jpg
+│   └── readme/
+├── scripts/check_board_baseline.py
+├── tests/
+└── evals/evals.json
+</code></pre>
+<h2 id="验证">验证</h2>
+<pre lang="bash"><code>python3 tests/test_check_board_baseline.py
+python3 tests/test_skill_contract.py
+</code></pre>
+<p>这两组测试验证板级 checker 与 Skill 合同。它们不冒充真机、电气或量产验证。</p>
+<h2 id="许可与权利边界">许可与权利边界</h2>
+<p>从首次包含本许可的版本起，项目自有的 Skill、脚本、测试、文档及其他软件内容采用 <a href="../../../LICENSE" rel="noopener noreferrer">PolyForm-Noncommercial-1.0.0</a>（SPDX：<code>PolyForm-Noncommercial-1.0.0</code>）。许可覆盖协议定义的非商业目的，并允许在该范围内修改和再分发；商业用途需另行取得许可方的书面授权。分发时还须保留 <a href="../../../NOTICE" rel="noopener noreferrer">NOTICE</a> 中以 <code>Required Notice:</code> 开头的声明。本项目因此属于 source-available，不是 OSI 开源项目。这里仅作中文摘要，完整权利与义务以英文许可正文为准。</p>
+<p>在 <a href="../../../ASSET-LICENSE.md" rel="noopener noreferrer">ASSET-LICENSE.md</a> 中标为 Covered 的资产权利，以及 Mixed 资产中明确标注、由许可方拥有或有权许可的项目自有图片版权权益，采用 <code>CC-BY-NC-4.0</code>。该许可允许在署名且非商业的条件下分享和改编；品牌 Logo、微信公众号二维码以及许可方无权许可的第三方材料不在这项资产授权内。</p>
+<p>含 Logo 的 PCB 快照及其 Hero／审阅渲染、品牌版原理图与整页预览属于混合资产，不作为整文件统一授予 CC 许可；其中的原理图、PCB／说明图、README 文字、页面代码、Logo 与二维码分别沿用各自的许可或权利状态，具体路径和组成边界以 <a href="../../../ASSET-LICENSE.md" rel="noopener noreferrer">ASSET-LICENSE.md</a> 为准。</p>
+<p>换证不追溯：在首次包含本许可的版本之前，已经按 Apache-2.0 发布并取得的版本继续适用其当时的 Apache-2.0 授权，本次换证不撤回既有许可。每个版本以其随附的 <code>LICENSE</code> 为准。</p>
+<p>品牌名称与 Logo 只用于来源识别和展示，两份许可都不授予商标使用权；第三方材料仍受其各自权利状态约束。原理图与 PCB 快照是当前板级证据，不是完整 ECAD、制造包或量产认证；GPIO、引脚和电气关系等硬件事实也不会仅因图片许可而成为排他权利，基于这些事实独立编写的固件不会仅因参考本 Skill 自动受该许可约束。</p>
+<h2 id="交流">交流</h2>
+<div>
+  <p>扫码关注公众号，获取更新与交流反馈</p>
+  <img src="../../wechat-qr.jpg" alt="微信公众号二维码，用于获取 easyinput-board-cy 更新与交流反馈" width="200">
+</div>
+</article>
+</section>
+</main>
+
+</body>
+</html>
