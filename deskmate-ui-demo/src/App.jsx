@@ -157,6 +157,9 @@ function AppContent() {
     window.location.hash = "/voice";
     deviceEventBus.publish(createDeviceEvent("voice-toggle", "global-shortcut", { phase: detail.phase || null, shortcut: detail.shortcut || "" }, { at: detail.at }));
   }), []);
+  useEffect(() => voiceAdapters.desktop.onKeyDiagnostic((detail) => {
+    deviceEventBus.publish(createDeviceEvent("key-diagnostic", "global-shortcut", { key: detail.key || "", code: detail.code || "", control: Boolean(detail.control), shift: Boolean(detail.shift), alt: Boolean(detail.alt), meta: Boolean(detail.meta) }, { at: detail.at }));
+  }), []);
   useEffect(() => {
     const onHash = () => setCurrent(resolveHash());
     window.addEventListener("hashchange", onHash);

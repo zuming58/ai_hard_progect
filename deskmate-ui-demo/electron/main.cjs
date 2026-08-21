@@ -2,6 +2,7 @@ const { app, BrowserWindow, globalShortcut, ipcMain, clipboard, session } = requ
 const path = require("path");
 const { fileURLToPath } = require("url");
 const { spawn } = require("child_process");
+const fs = require("fs");
 const { normalizeShortcut } = require("./shortcut.cjs");
 
 const DEFAULT_SHORTCUT = "Ctrl+Shift+Space";
@@ -14,6 +15,31 @@ let mainWindow;
 let shortcut = DEFAULT_SHORTCUT;
 let voiceSessionRecording = false;
 let voiceTargetWindow = null;
+const smokeMode = process.argv.includes("--deskmate-smoke-test");
+let smokeStage = 0;
+
+if (smokeMode) {
+  app.setPath("userData", path.join(app.getPath("temp"), `deskmate-smoke-${process.pid}`));
+  app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+  app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+}
+
+async function runSmokeTest() {
+  if (!smokeMode || smokeStage !== 0) return;
+  smokeStage = 1;
+  await mainWindow.webContents.executeJavaScript(`localStorage.setItem("deskmate.app-state", JSON.stringify({ schemaVersion: 3, settings: { keyDiagnosticsEnabled: true, simulatorEnabled: true, sttMode: "mock", outputMode: "clipboard", formatting: "raw" } })); location.hash = "/voice"; location.reload();`);
+}
+
+async function finishSmokeTest() {
+  if (!smokeMode || smokeStage !== 1) return;
+  smokeStage = 2;
+  const pageResult = await mainWindow.webContents.executeJavaScript(`(async () => { const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)); await wait(800); const button = () => [...document.querySelectorAll("button")].find((item) => item.textContent.includes("模拟语音键")); if (!button()) return { ok: false, reason: "simulator-button-missing", bodyLength: document.body.innerText.length }; button().click(); await wait(1200); button().click(); await wait(3000); const state = JSON.parse(localStorage.getItem("deskmate.app-state") || "{}"); return { ok: state.history?.[0]?.text === "这是设备模拟器生成的测试转写。", historyText: state.history?.[0]?.text || "", bodyHasTranscript: document.body.innerText.includes("这是设备模拟器生成的测试转写。") }; })()`);
+  const report = { ...pageResult, clipboardText: clipboard.readText(), windowTitle: mainWindow.getTitle(), windowVisible: mainWindow.isVisible() };
+  report.ok = Boolean(report.ok && report.bodyHasTranscript && report.clipboardText === report.historyText && report.windowVisible);
+  const resultPath = process.env.DESKMATE_SMOKE_RESULT;
+  if (resultPath && path.extname(resultPath).toLowerCase() === ".json") fs.writeFileSync(resultPath, JSON.stringify(report, null, 2));
+  app.exit(report.ok ? 0 : 1);
+}
 
 function getDevUrl() {
   const candidate = process.env.DESKMATE_DEV_URL || DEFAULT_DEV_URL;
@@ -135,6 +161,7 @@ function createWindow() {
     if (input.type !== "keyDown") return;
     mainWindow.webContents.send("key-diagnostic", { key: input.key, code: input.code, control: input.control, shift: input.shift, alt: input.alt, meta: input.meta, at: new Date().toISOString() });
   });
+  mainWindow.webContents.on("did-finish-load", () => { if (smokeStage === 0) void runSmokeTest(); else if (smokeStage === 1) void finishSmokeTest(); });
   mainWindow.on("closed", () => { mainWindow = null; });
 }
 

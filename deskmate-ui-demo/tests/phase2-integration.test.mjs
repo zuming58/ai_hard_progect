@@ -23,12 +23,15 @@ test("simulator debounces rapid presses and reports disconnect/reconnect", () =>
 test("mock STT succeeds while unconfigured real adapter stays pending", async () => {
   assert.equal((await new MockSttAdapter("确定文本").transcribe(new Blob())).text, "确定文本");
   assert.equal((await new SttAdapter().transcribe(new Blob())).status, "pending");
+  assert.equal((await new SttAdapter({ maxBytes: 1 }).transcribe(new Blob(["xx"]))).status, "error");
 });
 
 test("HTTP STT enforces size, cancellation, timeout, and one retry", async () => {
   const tooLarge = await new HttpSttAdapter({ endpoint: "https://example.invalid", maxBytes: 1 }).transcribe(new Blob(["xx"])); assert.match(tooLarge.message, /超过/);
+  assert.match((await new MockSttAdapter("text", { maxBytes: 1 }).transcribe(new Blob(["xx"]))).message, /超过/);
   const cancelled = new AbortController(); cancelled.abort(); assert.equal((await new HttpSttAdapter({ endpoint: "https://example.invalid" }).transcribe(new Blob(), { signal: cancelled.signal })).status, "cancelled");
   let calls = 0; const retried = await new HttpSttAdapter({ endpoint: "https://example.invalid", fetchImpl: async () => { calls += 1; if (calls === 1) throw new Error("temporary"); return { ok: true, json: async () => ({ text: "成功" }) }; } }).transcribe(new Blob()); assert.equal(retried.status, "success"); assert.equal(calls, 2);
+  let clientErrorCalls = 0; const clientError = await new HttpSttAdapter({ endpoint: "https://example.invalid", fetchImpl: async () => { clientErrorCalls += 1; return { ok: false, status: 400 }; } }).transcribe(new Blob()); assert.equal(clientError.status, "error"); assert.equal(clientErrorCalls, 1);
   const timeout = await new HttpSttAdapter({ endpoint: "https://example.invalid", timeoutMs: 5, fetchImpl: (_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new Error("aborted")))) }).transcribe(new Blob()); assert.match(timeout.message, /超时/);
 });
 
@@ -54,4 +57,10 @@ test("STT error keeps recording history fallback", async () => {
   const saved = [];
   await processVoiceRecording({ blob: new Blob(["audio"]), stt: { transcribe: async () => ({ status: "error", text: "", provider: "test", durationMs: 1, message: "failed" }) }, organizer: new ConfigurableTextOrganizer(), saveHistory: async (item) => { saved.push(item); return item; }, output: { output: async () => ({ ok: true }) } });
   assert.equal(saved[0].text, "录音完成，等待转写服务");
+});
+
+test("organizer exception safely falls back to raw transcription", async () => {
+  const saved = [];
+  const response = await processVoiceRecording({ blob: new Blob(["audio"]), stt: new MockSttAdapter("原始转写"), organizer: { organize: async () => { throw new Error("organizer failed"); } }, saveHistory: async (item) => { saved.push(item); return item; }, output: { output: async () => ({ ok: true }) } });
+  assert.equal(response.text, "原始转写"); assert.equal(saved[0].text, "原始转写"); assert.equal(response.organized.fallback, true);
 });

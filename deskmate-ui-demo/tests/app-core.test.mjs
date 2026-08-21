@@ -19,6 +19,7 @@ test("rejects malformed imported configurations", () => {
   assert.throws(() => validateConfig({ history: "not-an-array" }), /历史记录/);
   assert.throws(() => validateConfig({ expressionMapping: { working: "missing" } }), /状态表情映射/);
   assert.throws(() => validateConfig({ schemaVersion: 99 }), /更高版本/);
+  assert.throws(() => validateConfig({ settings: { sttMode: "pretend-connected" } }), /STT 模式/);
 });
 
 test("falls back to defaults when persisted storage has an invalid shape", () => {

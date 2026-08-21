@@ -51,6 +51,7 @@ import { ConfigurableTextOrganizer, HttpSttAdapter, MockSttAdapter } from "./ada
 import { DeviceSimulator } from "./adapters/deviceSimulator.js";
 import { deviceEventBus } from "./domain/deviceEvents.js";
 import { createDiagnosticReport } from "./services/diagnostics.js";
+import { processVoiceRecording } from "./services/voicePipeline.js";
 import {
   Button,
   Card,
@@ -157,8 +158,10 @@ export function VoicePage({ notify }) {
   const [recordingUrl, setRecordingUrl] = useState("");
   const [desktopCaps, setDesktopCaps] = useState({ supported: false, shortcutRegistered: false });
   const [lastDeviceEvent, setLastDeviceEvent] = useState(null);
+  const [processing, setProcessing] = useState(false);
   const toggleRef = useRef(() => {});
   const simulatorRef = useRef(new DeviceSimulator(deviceEventBus));
+  const sttAbortRef = useRef(null);
   const handleComplete = useCallback(async (item) => {
     const id = globalThis.crypto?.randomUUID?.() || `recording-${Date.now()}`;
     let audioId;
@@ -171,22 +174,18 @@ export function VoicePage({ notify }) {
       }
     }
     const stt = state.settings.sttMode === "mock" && state.settings.simulatorEnabled ? new MockSttAdapter() : state.settings.sttMode === "http" ? new HttpSttAdapter({ endpoint: state.settings.sttEndpoint }) : voiceAdapters.stt;
-    let result;
-    try { result = await stt.transcribe(item.blob); } catch (cause) { result = { status: "error", text: "", provider: "unknown", durationMs: 0, message: cause.message }; }
-    const organized = result.status === "success" ? await new ConfigurableTextOrganizer().organize(result.text, { mode: state.settings.formatting, rules: state.vocabulary.rules, customRule: state.settings.customOrganizerRule }) : null;
-    const text = organized?.text || "录音完成，等待转写服务";
     setRecordingItem({ ...item, id, audioId });
-    setTranscript(text);
-    patch({ history: [{ id, audioId, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), date: "今天", duration: `${item.duration} 秒`, count: result.status === "success" ? `${text.length} 字` : "待转写", text }, ...state.history], diagnostics: { ...(state.diagnostics || {}), stt: { provider: result.provider, status: result.status, durationMs: result.durationMs, errorType: result.status === "error" ? result.message : "" } } });
-    if (result.status === "success") {
-      const mode = state.settings.activeWindowOutputEnabled ? "active-window" : state.settings.outputMode;
-      const output = await voiceAdapters.output.output(text, mode).catch((cause) => ({ ok: false, reason: cause.message }));
-      notify(output.ok ? `转写完成，已输出到${mode === "history" ? "历史" : mode === "clipboard" ? "剪贴板" : "当前窗口"}` : "转写已保存到历史，但文字输出失败");
-    } else notify(audioId ? "录音已保存，等待转写服务" : "录音已完成，等待转写服务");
+    const controller = new AbortController(); sttAbortRef.current = controller; setProcessing(true);
+    const mode = state.settings.activeWindowOutputEnabled ? "active-window" : state.settings.outputMode;
+    const processed = await processVoiceRecording({ blob: item.blob, stt, organizer: new ConfigurableTextOrganizer(), organizerOptions: { mode: state.settings.formatting, rules: state.vocabulary.rules, customRule: state.settings.customOrganizerRule }, signal: controller.signal, output: voiceAdapters.output, outputMode: mode, saveHistory: async ({ text, transcript: result }) => { const entry = { id, audioId, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), date: "今天", duration: `${item.duration} 秒`, count: result.status === "success" ? `${text.length} 字` : "待转写", text }; patch({ history: [entry, ...state.history], diagnostics: { ...(state.diagnostics || {}), stt: { provider: result.provider, status: result.status, durationMs: result.durationMs, errorType: result.status === "error" ? result.message : "" } } }); return entry; } });
+    sttAbortRef.current = null; setProcessing(false); setTranscript(processed.text);
+    if (processed.transcript.status === "success") notify(processed.output.ok ? `转写完成，已输出到${mode === "history" ? "历史" : mode === "clipboard" ? "剪贴板" : "当前窗口"}` : "转写已保存到历史，但文字输出失败");
+    else notify(processed.transcript.status === "cancelled" ? "转写已取消，录音仍保存在历史中" : audioId ? "录音已保存，等待转写服务" : "录音已完成，等待转写服务");
   }, [notify, patch, state.history, state.settings]);
   const { status, seconds, level, error, stop, toggle, cancel } = useRecorder({ deviceId: source || undefined, onComplete: handleComplete, onError: notify });
   const recording = status === "recording";
-  toggleRef.current = toggle;
+  const processingRef = useRef(processing); processingRef.current = processing;
+  toggleRef.current = () => processingRef.current ? Promise.resolve({ ignored: true, reason: "processing" }) : toggle();
   const recordingRef = useRef(recording); recordingRef.current = recording;
   useEffect(() => deviceEventBus.subscribe((event) => { setLastDeviceEvent(event); if (event.type === "voice-toggle") toggleRef.current(); if (event.type === "connection-change" && !event.payload.connected && recordingRef.current) { stop(); notify("模拟设备已断线，当前录音已停止并保留"); } }), [notify, stop]);
   useEffect(() => { voiceAdapters.desktop.setVoiceRecording(recording).catch(() => {}); }, [recording]);
@@ -217,18 +216,19 @@ export function VoicePage({ notify }) {
           </div>
         </div>
           <div className={`recorder ${recording ? "is-recording" : ""}`}>
-          <div className="recorder__state"><span className="pulse-dot" />{recording ? "正在录音…" : transcript ? "录音完成" : "准备就绪"}</div>
+          <div className="recorder__state"><span className="pulse-dot" />{recording ? "正在录音…" : processing ? "正在转写…" : transcript ? "录音完成" : "准备就绪"}</div>
           <div className="waveform" aria-label="录音声波">
             {Array.from({ length: 42 }).map((_, index) => <span key={index} style={{ "--height": `${recording ? Math.max(8, level * (0.35 + ((index % 5) / 10))) : 8 + ((index * 7) % 14)}px`, "--delay": `${index * -0.04}s` }} />)}
           </div>
           <div className="recorder__time">{time}</div>
           <p className="recorder__transcript">{transcript || (recording ? "正在采集音频…" : "按下按钮或使用快捷键开始录音")}</p>
-          <Button icon={recording ? PlayerPause : Microphone2} variant={recording ? "danger" : "primary"} onClick={toggle}>{recording ? "停止录音" : "开始录音"}</Button>
+          <Button icon={recording ? PlayerPause : Microphone2} variant={recording ? "danger" : "primary"} onClick={toggleRef.current} disabled={processing}>{recording ? "停止录音" : "开始录音"}</Button>
           {recording && <Button variant="ghost" onClick={cancel}>取消</Button>}
+          {processing && <Button variant="ghost" onClick={() => sttAbortRef.current?.abort()}>取消转写</Button>}
           {recordingUrl && <audio controls src={recordingUrl} />}
           {error && <Notice tone="warning" title="麦克风不可用">{error}</Notice>}
         </div>
-      <div className="voice-statusbar"><span>状态 · {recording ? "正在录音" : status === "error" ? "不可用" : status === "completed" ? "等待转写" : "准备就绪"}</span><span>音量 · {level}%</span><span>悬浮窗 · {state.settings.floating ? "已开启" : "已关闭"}</span></div>
+      <div className="voice-statusbar"><span>状态 · {recording ? "正在录音" : processing ? "正在转写" : status === "error" ? "不可用" : status === "completed" ? "录音完成" : "准备就绪"}</span><span>音量 · {level}%</span><span>悬浮窗 · {state.settings.floating ? "已开启" : "已关闭"}</span></div>
       </Card>
       <div className="two-column compact-panels">
         <Card><SectionTitle index="02" title="输出方式" /><SettingRow title="智能整理" description="移除口头语并按语义分段"><Toggle checked onChange={() => notify("将在下一次录音时生效")} /></SettingRow></Card>
@@ -313,10 +313,9 @@ export function KeymapPage({ notify }) {
   const actions = state.keymap;
   const update = (value) => patch({ keymap: actions.map((action, index) => index === selectedKey ? value : action) });
   useEffect(() => {
-    if (!window.desktopBridge?.onKeyDiagnostic) return undefined;
-    return window.desktopBridge.onKeyDiagnostic((event) => {
-      if (!state.settings.keyDiagnosticsEnabled) return;
-      setDiagnostics((items) => [{ ...event, at: new Date(event.at).toLocaleTimeString() }, ...items].slice(0, 8));
+    return deviceEventBus.subscribe((event) => {
+      if (!state.settings.keyDiagnosticsEnabled || event.type !== "key-diagnostic") return;
+      setDiagnostics((items) => [{ ...event.payload, source: event.source, at: new Date(event.at).toLocaleTimeString() }, ...items].slice(0, 8));
     });
   }, [state.settings.keyDiagnosticsEnabled]);
   return (
@@ -324,7 +323,7 @@ export function KeymapPage({ notify }) {
       <PageIntro title="按键配置" description="配置键盘按键、旋钮和快捷动作" actions={<><StatusBadge tone="demo">本机配置 · 未同步</StatusBadge><Button icon={Send} variant="primary" onClick={() => notify("已保存到本机；板子同步协议尚未接入")}>保存配置</Button></>} />
       <Notice tone="demo" title="板子同步待接入">按键映射现在会保存在本机，但还不会写回 EasyInput 板子。板子的 HID 按键输入与配置写回是两条不同链路。</Notice>
       <SettingRow title="按键诊断模式" description="只记录键名、修饰键和时间，不记录输入内容；不能证明事件来自哪块键盘"><Toggle checked={state.settings.keyDiagnosticsEnabled} onChange={(value) => patch({ settings: { ...state.settings, keyDiagnosticsEnabled: value } })} /></SettingRow>
-      {diagnostics.length > 0 && <Card><div className="history-list">{diagnostics.map((item, index) => <div className="history-item" key={`${item.at}-${index}`}><time>{item.at}</time><div><p>{item.key} / {item.code}</p><small>{[item.control && "Ctrl", item.shift && "Shift", item.alt && "Alt", item.meta && "Meta"].filter(Boolean).join(" + ") || "无修饰键"}</small></div></div>)}</div></Card>}
+      {diagnostics.length > 0 && <Card><div className="history-list">{diagnostics.map((item, index) => <div className="history-item" key={`${item.at}-${index}`}><time>{item.at}</time><div><p>{item.key} / {item.code}</p><small>{item.source} · {[item.control && "Ctrl", item.shift && "Shift", item.alt && "Alt", item.meta && "Meta"].filter(Boolean).join(" + ") || "无修饰键"}</small></div></div>)}</div></Card>}
       <div className="keymap-grid">
         <Card className="keymap-board">
           <div className="device-line"><span>当前电脑 <strong>Windows</strong></span><span>键盘系统 <strong>尚未读取</strong></span><span>同步结果 <strong className="success-text">UI 已就绪</strong></span></div>
@@ -494,7 +493,7 @@ export function SettingsPage({ notify }) {
   const theme = state.settings.theme;
   const floating = state.settings.floating;
   const updateSettings = (value) => patch({ settings: { ...state.settings, ...value } });
-  const exportDiagnostics = async () => { const caps = await voiceAdapters.desktop.capabilities(); const report = createDiagnosticReport({ runtime: caps.supported ? "electron" : "web", shortcut: { value: state.settings.voiceShortcut, registered: Boolean(caps.shortcutRegistered) }, microphone: { selected: state.settings.microphoneId ? "custom-device" : "system-default", permission: "runtime-check" }, deviceEvent: deviceEventBus.lastEvent ? { source: deviceEventBus.lastEvent.source, type: deviceEventBus.lastEvent.type, at: deviceEventBus.lastEvent.at } : null, stt: state.diagnostics?.stt || { status: state.settings.sttMode === "unconfigured" ? "unconfigured" : state.settings.sttMode } }); const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }); const link = document.createElement("a"); const url = URL.createObjectURL(blob); link.href = url; link.download = "deskmate-diagnostics.json"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0); notify("已导出脱敏诊断 JSON"); };
+  const exportDiagnostics = async () => { const caps = await voiceAdapters.desktop.capabilities(); let microphonePermission = "unknown"; try { microphonePermission = (await navigator.permissions.query({ name: "microphone" })).state; } catch { /* unsupported permission query */ } const report = createDiagnosticReport({ runtime: caps.supported ? "electron" : "web", shortcut: { value: state.settings.voiceShortcut, registered: Boolean(caps.shortcutRegistered) }, microphone: { selected: state.settings.microphoneId ? "custom-device" : "system-default", permission: microphonePermission }, deviceEvent: deviceEventBus.lastEvent ? { source: deviceEventBus.lastEvent.source, type: deviceEventBus.lastEvent.type, at: deviceEventBus.lastEvent.at } : null, stt: state.diagnostics?.stt || { status: state.settings.sttMode === "unconfigured" ? "unconfigured" : state.settings.sttMode } }); const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }); const link = document.createElement("a"); const url = URL.createObjectURL(blob); link.href = url; link.download = "deskmate-diagnostics.json"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0); notify("已导出脱敏诊断 JSON"); };
   const downloadConfig = () => { const blob = new Blob([exportConfig()], { type: "application/json" }); const link = document.createElement("a"); const url = URL.createObjectURL(blob); link.href = url; link.download = "deskmate-config.json"; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0); notify("配置 JSON 已导出"); };
   const importConfig = (event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { replace(JSON.parse(reader.result)); notify("配置已导入"); } catch (error) { notify(`导入失败：${error.message}`); } }; reader.readAsText(file); event.target.value = ""; };
   return (
