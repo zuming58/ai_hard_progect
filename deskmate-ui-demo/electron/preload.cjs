@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   clearBailianCredentials: () => ipcRenderer.invoke("bailian:clear-credentials"),
   transcribeBailian: (value) => ipcRenderer.invoke("bailian:transcribe", value),
   cancelBailian: (requestId) => ipcRenderer.invoke("bailian:cancel", requestId),
+  organizeBailian: (value) => ipcRenderer.invoke("bailian:organize", value),
+  cancelBailianOrganizer: (requestId) => ipcRenderer.invoke("bailian:cancel-organize", requestId),
   startBailianRealtime: () => ipcRenderer.invoke("bailian:realtime-start"),
   appendBailianRealtime: (value) => ipcRenderer.invoke("bailian:realtime-append", value),
   finishBailianRealtime: (sessionId) => ipcRenderer.invoke("bailian:realtime-finish", sessionId),

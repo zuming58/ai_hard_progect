@@ -48,6 +48,14 @@
         "filter": [
           "DeskMate.InputBridge.exe"
         ]
+      },
+      {
+        "from": "electron/assets",
+        "to": "app-assets",
+        "filter": [
+          "*.ico",
+          "*.png"
+        ]
       }
     ],
     "directories": {
@@ -55,7 +63,8 @@
     },
     "win": {
       "target": "dir",
-      "executableName": "DeskMate"
+      "executableName": "DeskMate",
+      "icon": "electron/assets/tray-icon.ico"
     }
   }
 }

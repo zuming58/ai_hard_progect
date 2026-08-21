@@ -1,12 +1,13 @@
-export const VOICE_SESSION_STATES = ["idle", "recording", "transcribing", "outputting", "completed", "error"];
+export const VOICE_SESSION_STATES = ["idle", "recording", "transcribing", "organizing", "outputting", "completed", "error"];
 
 const ALLOWED_TRANSITIONS = {
   idle: new Set(["recording", "error"]),
   recording: new Set(["idle", "transcribing", "error"]),
-  transcribing: new Set(["idle", "outputting", "completed", "error"]),
+  transcribing: new Set(["idle", "organizing", "outputting", "completed", "error"]),
+  organizing: new Set(["idle", "outputting", "completed", "error"]),
   outputting: new Set(["idle", "completed", "error"]),
   completed: new Set(["idle", "recording", "error"]),
-  error: new Set(["idle", "recording", "transcribing"]),
+  error: new Set(["idle", "recording", "transcribing", "organizing"]),
 };
 
 export const initialVoiceSession = Object.freeze({ state: "idle", message: "准备就绪", error: "", source: "", updatedAt: null });

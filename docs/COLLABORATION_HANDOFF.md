@@ -2,6 +2,8 @@
 
 更新时间：2026-08-21
 
+> 2026-08-22 更新：Phase 3 真机 F22/电脑麦克风/千问 ASR/文字输出闭环已经完成；Phase 3B 的正式 Windows 图标、系统托盘、`qwen3.7-flash` 智能与自定义整理、历史 schema v5 及安全回退也已完成。最新状态以 `docs/PHASE3B_PRODUCTIZATION_STATUS.md` 为准，下面较早的“尚未接入”描述仅保留为历史交接记录。
+
 ## 1. 当前基线
 
 - GitHub：`https://github.com/zuming58/ai_hard_progect`

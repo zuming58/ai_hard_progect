@@ -5,11 +5,19 @@ import { AI_EVENT_TYPES, AgentStatusAdapter } from "../src/adapters/index.js";
 
 test("migrates legacy storage to current schema without dropping defaults", () => {
   const result = migrateState({ schemaVersion: 0, hotwords: ["旧词"], rules: [] });
-  assert.equal(result.schemaVersion, 4);
+  assert.equal(result.schemaVersion, 5);
   assert.deepEqual(result.vocabulary.hotwords, ["旧词"]);
   assert.equal(result.settings.theme, defaultState.settings.theme);
   assert.equal(result.settings.formatting, "raw");
   assert.equal(result.keymap.length, 8);
+});
+
+test("migrates history schema v4 to raw and organized text fields", () => {
+  const result = migrateState({ schemaVersion: 4, history: [{ id: 9, time: "10:00", text: "legacy text" }] });
+  assert.equal(result.schemaVersion, 5);
+  assert.equal(result.history[0].rawText, "legacy text");
+  assert.equal(result.history[0].text, "legacy text");
+  assert.equal(result.history[0].organizer.mode, "raw");
 });
 
 test("rejects malformed imported configurations", () => {

@@ -46,7 +46,41 @@ export class HttpSttAdapter {
   }
 }
 function applyRules(text, rules = []) { return rules.reduce((value, rule) => rule.from ? value.split(rule.from).join(rule.to) : value, String(text || "")).trim(); }
+function organizerErrorType(error, aborted = false) {
+  if (aborted) return "cancelled";
+  const message = String(error?.message || "").toLowerCase();
+  if (message.includes("timeout") || message.includes("超时")) return "timeout";
+  if (message.includes("api key") || message.includes("密钥") || message.includes("配置")) return "configuration";
+  return "request-failed";
+}
+export class BailianTextOrganizer {
+  constructor({ bridge = globalThis.desktopBridge } = {}) { this.bridge = bridge; }
+  async organize(text, { mode, hotwords = [], rules = [], customRule = "", signal } = {}) {
+    if (typeof this.bridge?.organizeBailian !== "function") throw new Error("千问文字整理仅在 DeskMate 桌面版可用");
+    const requestId = globalThis.crypto?.randomUUID?.() || `organizer-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const cancel = () => this.bridge?.cancelBailianOrganizer?.(requestId);
+    signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      if (signal?.aborted) throw new Error("千问文字整理已取消");
+      return await this.bridge.organizeBailian({ requestId, text, mode, hotwords, rules, customRule });
+    } finally { signal?.removeEventListener("abort", cancel); }
+  }
+}
 export class ConfigurableTextOrganizer {
   constructor({ smartOrganizer = null } = {}) { this.smartOrganizer = smartOrganizer; }
-  async organize(text, { mode = "raw", rules = [], customRule = "" } = {}) { const raw = applyRules(text, rules); if (mode === "raw") return { text: raw, mode: "raw", fallback: false }; if (mode === "custom" && !customRule.trim()) return { text: raw, mode: "raw", fallback: true, message: "未配置自定义规则，已按原样整理" }; if (!this.smartOrganizer) return { text: raw, mode: "raw", fallback: true, message: `${mode === "smart" ? "智能" : "自定义"}整理未配置，已按原样整理` }; try { return { text: await this.smartOrganizer(raw, { mode, customRule }), mode, fallback: false }; } catch { return { text: raw, mode: "raw", fallback: true, message: "整理服务失败，已保留原始转写" }; } }
+  async organize(text, { mode = "raw", rules = [], hotwords = [], customRule = "", signal } = {}) {
+    const raw = applyRules(text, rules);
+    if (mode === "raw") return { text: raw, mode: "raw", model: "local-rules", durationMs: 0, status: "success", fallback: false };
+    if (mode === "custom" && !customRule.trim()) return { text: raw, mode: "raw", model: "local-rules", durationMs: 0, status: "fallback", fallback: true, message: "未配置自定义规则，已按原样整理" };
+    if (!this.smartOrganizer) return { text: raw, mode: "raw", model: "unconfigured", durationMs: 0, status: "fallback", fallback: true, message: `${mode === "smart" ? "智能" : "自定义"}整理未配置，已按原样整理` };
+    const invoke = typeof this.smartOrganizer === "function" ? this.smartOrganizer : this.smartOrganizer.organize.bind(this.smartOrganizer);
+    try {
+      const result = await invoke(raw, { mode, customRule, hotwords, rules, signal });
+      const value = typeof result === "string" ? { text: result } : result;
+      if (!String(value?.text || "").trim()) throw new Error("整理结果为空");
+      return { ...value, text: String(value.text).trim(), mode, fallback: false, status: value.status || "success" };
+    } catch (error) {
+      return { text: raw, mode: "raw", model: "qwen3.7-flash", durationMs: 0, status: signal?.aborted ? "cancelled" : "error", fallback: true, message: signal?.aborted ? "整理已取消，保留原始转写" : "整理服务失败，已保留原始转写", errorType: organizerErrorType(error, signal?.aborted) };
+    }
+  }
 }

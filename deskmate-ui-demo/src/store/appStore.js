@@ -3,7 +3,17 @@ import { expressionPresets, historyItems, keyActions } from "../appData.js";
 import { AI_EVENT_TYPES } from "../adapters/index.js";
 
 export const STORAGE_KEY = "deskmate.app-state";
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
+
+function normalizeHistoryEntry(item) {
+  const text = String(item?.text || "");
+  return {
+    ...item,
+    text,
+    rawText: typeof item?.rawText === "string" ? item.rawText : text,
+    organizer: item?.organizer && typeof item.organizer === "object" ? item.organizer : { mode: "raw", model: "legacy", durationMs: 0, status: "success", fallback: false },
+  };
+}
 
 export const defaultState = {
   schemaVersion: SCHEMA_VERSION,
@@ -25,6 +35,7 @@ function mergeDefaults(value) {
   if (!value || typeof value !== "object") return structuredClone(defaultState);
   return {
     ...structuredClone(defaultState), ...value, schemaVersion: SCHEMA_VERSION,
+    history: Array.isArray(value.history) ? value.history.map(normalizeHistoryEntry) : structuredClone(defaultState.history),
     vocabulary: { ...defaultState.vocabulary, ...(value.vocabulary || {}) },
     settings: { ...defaultState.settings, ...(value.settings || {}), operation: "toggle" },
     expressionMapping: { ...defaultState.expressionMapping, ...(value.expressionMapping || {}) },
@@ -41,6 +52,7 @@ export function migrateState(raw) {
   if (!raw || typeof raw !== "object") return structuredClone(defaultState);
   if (raw.schemaVersion === 0) raw = { ...raw, vocabulary: { hotwords: raw.hotwords || [], rules: raw.rules || [] } };
   if ((raw.schemaVersion ?? 0) < 4) raw = { ...raw, settings: { ...(raw.settings || {}), formatting: "raw" } };
+  if ((raw.schemaVersion ?? 0) < 5) raw = { ...raw, history: Array.isArray(raw.history) ? raw.history.map(normalizeHistoryEntry) : raw.history };
   return mergeDefaults(raw);
 }
 
@@ -56,6 +68,8 @@ export function loadState(storage = globalThis.localStorage) {
 export function serializeConfig(state) {
   const safe = structuredClone(state);
   if (safe.settings) safe.settings.sttEndpoint = "";
+  safe.history = [];
+  delete safe.diagnostics;
   delete safe.runtime;
   return JSON.stringify(safe, null, 2);
 }
@@ -64,7 +78,7 @@ export function validateConfig(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("配置必须是 JSON 对象");
   if (value.schemaVersion !== undefined && (!Number.isInteger(value.schemaVersion) || value.schemaVersion < 0)) throw new Error("schemaVersion 必须是非负整数数字");
   if ((value.schemaVersion ?? 0) > SCHEMA_VERSION) throw new Error("配置来自更高版本，请先升级 DeskMate");
-  if (value.history !== undefined && (!Array.isArray(value.history) || value.history.some((item) => !item || typeof item !== "object" || typeof item.text !== "string" || typeof item.time !== "string"))) throw new Error("历史记录格式无效");
+  if (value.history !== undefined && (!Array.isArray(value.history) || value.history.some((item) => !item || typeof item !== "object" || typeof item.text !== "string" || typeof item.time !== "string" || (item.rawText !== undefined && typeof item.rawText !== "string") || (item.organizer !== undefined && (!item.organizer || typeof item.organizer !== "object" || Array.isArray(item.organizer)))))) throw new Error("历史记录格式无效");
   if (value.keymap !== undefined && (!Array.isArray(value.keymap) || value.keymap.length !== 8 || value.keymap.some((item) => typeof item !== "string"))) throw new Error("按键映射必须包含 8 项文字动作");
   if (value.vocabulary !== undefined && (!value.vocabulary || typeof value.vocabulary !== "object" || Array.isArray(value.vocabulary))) throw new Error("词库格式无效");
   if (value.vocabulary?.hotwords && (!Array.isArray(value.vocabulary.hotwords) || value.vocabulary.hotwords.some((item) => typeof item !== "string"))) throw new Error("热词格式无效");

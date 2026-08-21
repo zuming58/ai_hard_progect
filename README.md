@@ -8,6 +8,7 @@
 - [新窗口交接](资料备份与知识库/00-新窗口交接-训练营与桌宠毕业设计.md)
 - [参考仓库](参考仓库/README.md)
 - [项目设计产物](项目设计/README.md)
+- [Phase 3B 语音产品化状态](docs/PHASE3B_PRODUCTIZATION_STATUS.md)
 
 ## 目录约定
 
