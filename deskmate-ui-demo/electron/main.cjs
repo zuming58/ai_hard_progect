@@ -27,15 +27,22 @@ if (smokeMode) {
 async function runSmokeTest() {
   if (!smokeMode || smokeStage !== 0) return;
   smokeStage = 1;
-  await mainWindow.webContents.executeJavaScript(`localStorage.setItem("deskmate.app-state", JSON.stringify({ schemaVersion: 3, settings: { keyDiagnosticsEnabled: true, simulatorEnabled: true, sttMode: "mock", outputMode: "clipboard", formatting: "raw" } })); location.hash = "/voice"; location.reload();`);
+  await mainWindow.webContents.executeJavaScript(`localStorage.setItem("deskmate.app-state", JSON.stringify({ schemaVersion: 3, settings: { keyDiagnosticsEnabled: true, simulatorEnabled: true, sttMode: "mock", outputMode: "clipboard", formatting: "raw" } })); location.hash = "/dashboard"; location.reload();`);
 }
 
 async function finishSmokeTest() {
   if (!smokeMode || smokeStage !== 1) return;
   smokeStage = 2;
-  const pageResult = await mainWindow.webContents.executeJavaScript(`(async () => { const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)); await wait(800); const button = () => [...document.querySelectorAll("button")].find((item) => item.textContent.includes("模拟语音键")); if (!button()) return { ok: false, reason: "simulator-button-missing", bodyLength: document.body.innerText.length }; button().click(); await wait(1200); button().click(); await wait(3000); const state = JSON.parse(localStorage.getItem("deskmate.app-state") || "{}"); return { ok: state.history?.[0]?.text === "这是设备模拟器生成的测试转写。", historyText: state.history?.[0]?.text || "", bodyHasTranscript: document.body.innerText.includes("这是设备模拟器生成的测试转写。") }; })()`);
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  await emitVoiceToggle(shortcut);
+  await new Promise((resolve) => setTimeout(resolve, 1400));
+  const startResult = await mainWindow.webContents.executeJavaScript(`({ route: location.hash, recording: document.body.innerText.includes("正在采集音频") })`);
+  await emitVoiceToggle(shortcut);
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  const pageResult = await mainWindow.webContents.executeJavaScript(`(() => { const state = JSON.parse(localStorage.getItem("deskmate.app-state") || "{}"); return { ok: state.history?.[0]?.text === "这是设备模拟器生成的测试转写。", historyText: state.history?.[0]?.text || "", bodyHasTranscript: document.body.innerText.includes("这是设备模拟器生成的测试转写。") }; })()`);
+  pageResult.startedFromDashboard = startResult.route === "#/voice" && startResult.recording;
   const report = { ...pageResult, clipboardText: clipboard.readText(), windowTitle: mainWindow.getTitle(), windowVisible: mainWindow.isVisible() };
-  report.ok = Boolean(report.ok && report.bodyHasTranscript && report.clipboardText === report.historyText && report.windowVisible);
+  report.ok = Boolean(report.ok && report.startedFromDashboard && report.bodyHasTranscript && report.clipboardText === report.historyText && report.windowVisible);
   const resultPath = process.env.DESKMATE_SMOKE_RESULT;
   if (resultPath && path.extname(resultPath).toLowerCase() === ".json") fs.writeFileSync(resultPath, JSON.stringify(report, null, 2));
   app.exit(report.ok ? 0 : 1);
@@ -159,7 +166,7 @@ function createWindow() {
   mainWindow.webContents.on("will-navigate", (event, url) => { if (!isAllowedAppUrl(url)) event.preventDefault(); });
   mainWindow.webContents.on("before-input-event", (_event, input) => {
     if (input.type !== "keyDown") return;
-    mainWindow.webContents.send("key-diagnostic", { key: input.key, code: input.code, control: input.control, shift: input.shift, alt: input.alt, meta: input.meta, at: new Date().toISOString() });
+    mainWindow.webContents.send("key-diagnostic", { source: "desktop-input", key: input.key, code: input.code, control: input.control, shift: input.shift, alt: input.alt, meta: input.meta, at: new Date().toISOString() });
   });
   mainWindow.webContents.on("did-finish-load", () => { if (smokeStage === 0) void runSmokeTest(); else if (smokeStage === 1) void finishSmokeTest(); });
   mainWindow.on("closed", () => { mainWindow = null; });

@@ -1,6 +1,6 @@
 export const DEVICE_EVENT_VERSION = 1;
 export const DEVICE_EVENT_TYPES = ["voice-toggle", "key-diagnostic", "connection-change", "audio-status"];
-export const DEVICE_EVENT_SOURCES = ["simulator", "global-shortcut", "easyinput"];
+export const DEVICE_EVENT_SOURCES = ["simulator", "global-shortcut", "desktop-input", "easyinput"];
 export function createDeviceEvent(type, source, payload = {}, options = {}) { return validateDeviceEvent({ version: DEVICE_EVENT_VERSION, type, source, deviceId: options.deviceId || null, at: options.at || new Date().toISOString(), payload }); }
 export function validateDeviceEvent(event) {
   if (!event || typeof event !== "object" || Array.isArray(event)) throw new Error("设备事件格式无效");

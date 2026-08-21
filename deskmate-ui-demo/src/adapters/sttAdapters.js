@@ -1,6 +1,15 @@
 const DEFAULT_MAX_BYTES = 15 * 1024 * 1024;
 function result(status, provider, started, extra = {}) { return { status, text: "", provider, durationMs: Date.now() - started, message: "", ...extra }; }
 function audioError(blob, maxBytes, provider, started) { if (!(blob instanceof Blob)) return result("error", provider, started, { message: "录音数据无效" }); if (blob.size > maxBytes) return result("error", provider, started, { message: `录音文件超过 ${Math.floor(maxBytes / 1024 / 1024)}MB 限制` }); return null; }
+export function validateSttEndpoint(value) {
+  let endpoint;
+  try { endpoint = new URL(value); } catch { throw new Error("转写服务地址无效"); }
+  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname);
+  if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && loopback)) throw new Error("转写服务必须使用 HTTPS；本机服务可使用 HTTP localhost");
+  const secretQuery = [...endpoint.searchParams.keys()].some((key) => /token|api.?key|password|secret|credential/i.test(key));
+  if (endpoint.username || endpoint.password || secretQuery) throw new Error("转写服务地址不能包含用户名、密码或 Token");
+  return endpoint;
+}
 export class MockSttAdapter { constructor(text = "这是设备模拟器生成的测试转写。", { maxBytes = DEFAULT_MAX_BYTES } = {}) { this.text = text; this.maxBytes = maxBytes; } async transcribe(blob, { signal } = {}) { const started = Date.now(); if (signal?.aborted) return result("cancelled", "mock", started, { message: "转写已取消" }); return audioError(blob, this.maxBytes, "mock", started) || result("success", "mock", started, { text: this.text }); } }
 export class HttpSttAdapter {
   constructor({ endpoint = "", provider = "http", timeoutMs = 15000, maxBytes = DEFAULT_MAX_BYTES, fetchImpl = globalThis.fetch } = {}) { Object.assign(this, { endpoint, provider, timeoutMs, maxBytes, fetchImpl }); }
@@ -9,8 +18,7 @@ export class HttpSttAdapter {
     if (signal?.aborted) return result("cancelled", this.provider, started, { message: "转写已取消" });
     if (!this.endpoint) return result("pending", this.provider, started, { message: "转写服务未配置" });
     let endpoint;
-    try { endpoint = new URL(this.endpoint); } catch { return result("error", this.provider, started, { message: "转写服务地址无效" }); }
-    if (!["http:", "https:"].includes(endpoint.protocol)) return result("error", this.provider, started, { message: "转写服务仅支持 HTTP 或 HTTPS" });
+    try { endpoint = validateSttEndpoint(this.endpoint); } catch (error) { return result("error", this.provider, started, { message: error.message }); }
     const invalidAudio = audioError(blob, this.maxBytes, this.provider, started); if (invalidAudio) return invalidAudio;
     if (typeof this.fetchImpl !== "function") return result("error", this.provider, started, { message: "当前环境不支持 HTTP 转写" });
     const controller = new AbortController(); const timeout = setTimeout(() => controller.abort("timeout"), this.timeoutMs); const abort = () => controller.abort("cancelled"); signal?.addEventListener("abort", abort, { once: true });
