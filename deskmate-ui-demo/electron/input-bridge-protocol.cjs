@@ -1,4 +1,4 @@
-const ALLOWED_SOURCES = new Set(["easyinput-hid", "keyboard"]);
+const ALLOWED_SOURCES = new Set(["easyinput-hid", "f22-fallback", "keyboard"]);
 const ALLOWED_KEYS = new Set(["F22", "RightAlt", "Escape", "Device"]);
 const ALLOWED_ACTIONS = new Set(["down", "up", "connected", "disconnected"]);
 
@@ -51,7 +51,7 @@ class InputTriggerFilter {
       return { kind: "status", event };
     }
     if (event.key === "Escape") return event.action === "down" ? { kind: "cancel", event } : { kind: "diagnostic", event };
-    const enabled = event.source === "easyinput-hid" && event.key === "F22" ? this.config.boardF22 : event.source === "keyboard" && event.key === "RightAlt" ? this.config.rightAlt : false;
+    const enabled = ["easyinput-hid", "f22-fallback"].includes(event.source) && event.key === "F22" ? this.config.boardF22 : event.source === "keyboard" && event.key === "RightAlt" ? this.config.rightAlt : false;
     if (!enabled) return { kind: "diagnostic", event };
     const signature = `${event.source}:${event.key}`;
     if (event.action === "down") {

@@ -14,6 +14,8 @@ const APP_ROOT = path.resolve(__dirname, "..", "dist", "client");
 const FOREGROUND_SCRIPT = "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class DeskMateForeground { [DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); }'; [DeskMateForeground]::GetForegroundWindow().ToInt64()";
 const PASTE_SCRIPT = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')";
 const VOICE_STATES = new Set(["idle", "recording", "transcribing", "outputting", "completed", "error", "cancelled"]);
+const singleInstance = app.requestSingleInstanceLock();
+if (!singleInstance) app.quit();
 
 let mainWindow;
 let overlayWindow;
@@ -25,6 +27,7 @@ let voiceTargetWindow = null;
 let bailianStore;
 let isQuitting = false;
 let lastVoiceState = { state: "idle", message: "准备就绪", seconds: 0, level: 0, floating: true };
+let lastVoiceToggleAt = 0;
 const activeBailianRequests = new Map();
 const smokeMode = process.argv.includes("--deskmate-smoke-test");
 const bailianTestAudio = process.argv.find((value) => value.startsWith("--bailian-test-audio="))?.slice("--bailian-test-audio=".length) || "";
@@ -101,6 +104,9 @@ function sendToMain(channel, payload) {
 }
 
 async function emitVoiceToggle(source = "global-shortcut", label = shortcut) {
+  const now = Date.now();
+  if (now - lastVoiceToggleAt < 350) return { ignored: true, reason: "duplicate-trigger" };
+  lastVoiceToggleAt = now;
   const phase = voiceSessionRecording ? "stop" : "start";
   if (phase === "start") voiceTargetWindow = await getForegroundWindowId();
   voiceSessionRecording = phase === "start";
@@ -323,6 +329,7 @@ app.whenReady().then(async () => {
   registerShortcut(DEFAULT_SHORTCUT);
   startInputBridge();
   app.on("activate", () => showMain());
+  app.on("second-instance", () => showMain());
 });
 
 app.on("before-quit", () => { isQuitting = true; inputBridge?.stop(); activeBailianRequests.forEach((controller) => controller.abort()); activeBailianRequests.clear(); });

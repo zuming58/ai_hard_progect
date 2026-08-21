@@ -21,7 +21,7 @@ internal static class Program
         }
 
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
-        using var window = new RawInputWindow(new EventWriter());
+        using var window = new RawInputWindow(new EventWriter(), args.Contains("--diagnose", StringComparer.OrdinalIgnoreCase));
         Application.Run();
     }
 }
@@ -78,17 +78,28 @@ internal sealed class RawInputWindow : NativeWindow, IDisposable
     private const ushort VkEscape = 0x1B;
     private const ushort VkRMenu = 0xA5;
     private const ushort VkF22 = 0x85;
+    private const int WhKeyboardLl = 13;
+    private const int WmKeyDown = 0x0100;
+    private const int WmKeyUp = 0x0101;
+    private const int WmSysKeyDown = 0x0104;
+    private const int WmSysKeyUp = 0x0105;
     private const string BoardVidPid = "VID_303A&PID_1006";
 
     private readonly EventWriter _writer;
+    private readonly bool _diagnosticMode;
+    private readonly LowLevelKeyboardProc _keyboardProc;
+    private IntPtr _keyboardHook;
     private bool _boardConnected;
     private bool _disposed;
 
-    public RawInputWindow(EventWriter writer)
+    public RawInputWindow(EventWriter writer, bool diagnosticMode = false)
     {
         _writer = writer;
+        _diagnosticMode = diagnosticMode;
+        _keyboardProc = KeyboardHook;
         CreateHandle(new CreateParams { Caption = "DeskMate Raw Input Bridge", Parent = new IntPtr(-3) });
         RegisterKeyboard();
+        _keyboardHook = SetWindowsHookEx(WhKeyboardLl, _keyboardProc, GetModuleHandle(null), 0);
         RefreshBoardStatus(force: true);
     }
 
@@ -132,7 +143,9 @@ internal sealed class RawInputWindow : NativeWindow, IDisposable
             var isUp = (keyboard.Flags & RiKeyBreak) != 0;
             var action = isUp ? "up" : "down";
 
-            if (board && keyboard.VKey == VkF22)
+            if (_diagnosticMode)
+                _writer.Input(board ? "easyinput-hid" : "other-keyboard", keyboard.VKey == VkF22 ? "F22" : $"VK_0x{keyboard.VKey:X2}_SCAN_0x{keyboard.MakeCode:X2}", action);
+            else if (board && keyboard.VKey == VkF22)
                 _writer.Input("easyinput-hid", "F22", action);
             else if (keyboard.VKey == VkRMenu || (keyboard.VKey == VkMenu && (keyboard.Flags & RiKeyE0) != 0))
                 _writer.Input("keyboard", "RightAlt", action);
@@ -151,6 +164,21 @@ internal sealed class RawInputWindow : NativeWindow, IDisposable
         if (!force && connected == _boardConnected) return;
         _boardConnected = connected;
         _writer.Status(connected);
+    }
+
+    private IntPtr KeyboardHook(int code, IntPtr message, IntPtr data)
+    {
+        if (code >= 0)
+        {
+            var value = Marshal.PtrToStructure<LowLevelKeyboardInput>(data);
+            if (value.VirtualKey == VkF22)
+            {
+                var messageId = message.ToInt32();
+                if (messageId is WmKeyDown or WmSysKeyDown) _writer.Input("f22-fallback", "F22", "down");
+                else if (messageId is WmKeyUp or WmSysKeyUp) _writer.Input("f22-fallback", "F22", "up");
+            }
+        }
+        return CallNextHookEx(_keyboardHook, code, message, data);
     }
 
     private static IEnumerable<string> EnumerateDeviceNames()
@@ -187,6 +215,7 @@ internal sealed class RawInputWindow : NativeWindow, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        if (_keyboardHook != IntPtr.Zero) UnhookWindowsHookEx(_keyboardHook);
         DestroyHandle();
     }
 
@@ -210,6 +239,18 @@ internal sealed class RawInputWindow : NativeWindow, IDisposable
         public uint ExtraInformation;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LowLevelKeyboardInput
+    {
+        public uint VirtualKey;
+        public uint ScanCode;
+        public uint Flags;
+        public uint Time;
+        public UIntPtr ExtraInfo;
+    }
+
+    private delegate IntPtr LowLevelKeyboardProc(int code, IntPtr message, IntPtr data);
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterRawInputDevices([In] RawInputDevice[] devices, uint count, uint size);
 
@@ -221,4 +262,16 @@ internal sealed class RawInputWindow : NativeWindow, IDisposable
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint GetRawInputDeviceInfo(IntPtr device, uint command, StringBuilder? data, ref uint size);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int hook, LowLevelKeyboardProc callback, IntPtr module, uint threadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hook);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr message, IntPtr data);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr GetModuleHandle(string? moduleName);
 }

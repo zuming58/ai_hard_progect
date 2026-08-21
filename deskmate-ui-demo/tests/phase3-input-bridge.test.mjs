@@ -56,6 +56,12 @@ test("Right Alt is opt-in and Escape produces cancellation", () => {
   assert.equal(filter.accept(bridgeEvent({ source: "keyboard", key: "Escape" })).kind, "cancel");
 });
 
+test("injected F22 fallback uses the same release-only trigger policy", () => {
+  const filter = new InputTriggerFilter({ now: () => 1000 });
+  assert.equal(filter.accept(bridgeEvent({ source: "f22-fallback" })).kind, "diagnostic");
+  assert.equal(filter.accept(bridgeEvent({ source: "f22-fallback", action: "up", sequence: 2 })).kind, "trigger");
+});
+
 test("input bridge manager schedules an automatic restart after a crash", () => {
   let scheduled;
   let spawnCount = 0;
