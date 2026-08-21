@@ -1,0 +1,38 @@
+export class SttAdapter {
+  async transcribe() { return { status: "pending", text: "", message: "录音完成，等待转写服务" }; }
+}
+
+export class TextOrganizerAdapter {
+  async organize(text) { return String(text || ""); }
+}
+
+export class TextOutputAdapter {
+  constructor(bridge = globalThis.window?.desktopBridge) { this.bridge = bridge; }
+  async output(text, mode = "history") {
+    if (mode === "history") return { ok: true, mode };
+    if (mode === "clipboard") {
+      if (this.bridge?.writeClipboard) return this.bridge.writeClipboard(text);
+      if (globalThis.navigator?.clipboard?.writeText) { await navigator.clipboard.writeText(text); return { ok: true, mode }; }
+      return { ok: false, reason: "clipboard-unavailable" };
+    }
+    if (mode === "active-window") {
+      if (!this.bridge?.pasteActiveWindow) return { ok: false, reason: "desktop-bridge-unavailable" };
+      return this.bridge.pasteActiveWindow(text);
+    }
+    return { ok: false, reason: "unknown-output-mode" };
+  }
+}
+
+export class EasyInputLanAudioAdapter {
+  async getStatus() { return { connected: false, available: false, reason: "protocol-unconfirmed" }; }
+  async openStream() { throw new Error("EasyInput 局域网音频协议尚未确认"); }
+}
+
+export class DesktopBridgeAdapter {
+  constructor(bridge = globalThis.window?.desktopBridge) { this.bridge = bridge; }
+  async capabilities() { return this.bridge?.getCapabilities ? this.bridge.getCapabilities() : { supported: false, platform: "web" }; }
+  async registerShortcut(shortcut) { return this.bridge?.registerShortcut ? this.bridge.registerShortcut(shortcut) : { registered: false, shortcut, reason: "desktop-bridge-unavailable" }; }
+  onVoiceToggle(listener) { return this.bridge?.onVoiceToggle ? this.bridge.onVoiceToggle(listener) : () => {}; }
+}
+
+export const voiceAdapters = { stt: new SttAdapter(), organizer: new TextOrganizerAdapter(), output: new TextOutputAdapter(), lanAudio: new EasyInputLanAudioAdapter(), desktop: new DesktopBridgeAdapter() };

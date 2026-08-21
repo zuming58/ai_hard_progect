@@ -23,6 +23,7 @@ import {
 import { pageMeta } from "./appData.js";
 import { AppStoreProvider, useAppStore } from "./store/appStore.js";
 import { mockAdapters } from "./adapters/index.js";
+import { voiceAdapters } from "./adapters/voiceAdapters.js";
 import {
   AgentsPage,
   ConnectionsPage,
@@ -138,6 +139,10 @@ function AppContent() {
   const [toast, setToast] = useState("");
   const { event } = useAppStore();
   useEffect(() => mockAdapters.agentStatus.subscribe(event, { emitCurrent: false }), [event]);
+  useEffect(() => voiceAdapters.desktop.onVoiceToggle((detail) => {
+    window.location.hash = "/voice";
+    window.setTimeout(() => window.dispatchEvent(new CustomEvent("deskmate:voice-toggle", { detail })), 0);
+  }), []);
   useEffect(() => {
     const onHash = () => setCurrent(resolveHash());
     window.addEventListener("hashchange", onHash);

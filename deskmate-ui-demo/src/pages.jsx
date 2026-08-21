@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconAdjustmentsHorizontal as AdjustmentsHorizontal,
   IconAlertCircle as AlertCircle,
@@ -46,6 +46,7 @@ import { useAppStore } from "./store/appStore.js";
 import { useRecorder } from "./hooks/useRecorder.js";
 import { clearRecordingBlobs, deleteRecordingBlob, getRecordingBlob, saveRecordingBlob } from "./store/recordingStore.js";
 import { mockAdapters } from "./adapters/index.js";
+import { voiceAdapters } from "./adapters/voiceAdapters.js";
 import {
   Button,
   Card,
@@ -149,6 +150,7 @@ export function VoicePage({ notify }) {
   const [transcript, setTranscript] = useState("");
   const [recordingItem, setRecordingItem] = useState(null);
   const [recordingUrl, setRecordingUrl] = useState("");
+  const toggleRef = useRef(() => {});
   const handleComplete = useCallback(async (item) => {
     const id = globalThis.crypto?.randomUUID?.() || `recording-${Date.now()}`;
     let audioId;
@@ -160,14 +162,23 @@ export function VoicePage({ notify }) {
         notify(`录音已完成，但音频无法持久保存：${cause.message}`);
       }
     }
+    let result;
+    try { result = await voiceAdapters.stt.transcribe(item.blob); } catch (cause) { result = { status: "error", text: "", message: cause.message }; }
+    const text = result.status === "success" ? await voiceAdapters.organizer.organize(result.text) : "录音完成，等待转写服务";
     setRecordingItem({ ...item, id, audioId });
-    setTranscript("录音完成，等待转写服务");
-    patch({ history: [{ id, audioId, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), date: "今天", duration: `${item.duration} 秒`, count: "待转写", text: "录音完成，等待转写服务" }, ...state.history] });
-    notify(audioId ? "录音已保存，等待转写服务" : "录音已完成，等待转写服务");
-  }, [notify, patch, state.history]);
+    setTranscript(text);
+    patch({ history: [{ id, audioId, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), date: "今天", duration: `${item.duration} 秒`, count: result.status === "success" ? `${text.length} 字` : "待转写", text }, ...state.history] });
+    if (result.status === "success") {
+      const mode = state.settings.activeWindowOutputEnabled ? "active-window" : state.settings.outputMode;
+      const output = await voiceAdapters.output.output(text, mode).catch((cause) => ({ ok: false, reason: cause.message }));
+      notify(output.ok ? `转写完成，已输出到${mode === "history" ? "历史" : mode === "clipboard" ? "剪贴板" : "当前窗口"}` : "转写已保存到历史，但文字输出失败");
+    } else notify(audioId ? "录音已保存，等待转写服务" : "录音已完成，等待转写服务");
+  }, [notify, patch, state.history, state.settings]);
   const { status, seconds, level, error, start, stop, cancel } = useRecorder({ deviceId: source || undefined, onComplete: handleComplete, onError: notify });
   const recording = status === "recording";
   const toggleRecording = () => recording ? stop() : start();
+  toggleRef.current = toggleRecording;
+  useEffect(() => { const listener = () => toggleRef.current(); window.addEventListener("deskmate:voice-toggle", listener); return () => window.removeEventListener("deskmate:voice-toggle", listener); }, []);
   useEffect(() => {
     if (!recordingItem?.blob) { setRecordingUrl(""); return undefined; }
     const url = URL.createObjectURL(recordingItem.blob);
@@ -183,7 +194,7 @@ export function VoicePage({ notify }) {
   const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   return (
     <div className="page">
-      <PageIntro title="语音输入" description="专注录音、实时转写与智能整理" actions={<StatusBadge tone="demo">录音可用 · 转写待接入</StatusBadge>} />
+      <PageIntro title="语音输入" description="专注录音、实时转写与智能整理" actions={<StatusBadge tone={window.desktopBridge ? "success" : "demo"}>{window.desktopBridge ? "桌面快捷键已启用" : "Web 模式 · 全局快捷键不可用"}</StatusBadge>} />
       <Card className="voice-console">
         <div className="voice-console__header">
           <div><span className="section-kicker"><span>01</span>语音输入</span><p>专注录音与转写</p></div>
@@ -285,12 +296,22 @@ export function VocabularyPage({ notify }) {
 export function KeymapPage({ notify }) {
   const { state, patch } = useAppStore();
   const [selectedKey, setSelectedKey] = useState(0);
+  const [diagnostics, setDiagnostics] = useState([]);
   const actions = state.keymap;
   const update = (value) => patch({ keymap: actions.map((action, index) => index === selectedKey ? value : action) });
+  useEffect(() => {
+    if (!window.desktopBridge?.onKeyDiagnostic) return undefined;
+    return window.desktopBridge.onKeyDiagnostic((event) => {
+      if (!state.settings.keyDiagnosticsEnabled) return;
+      setDiagnostics((items) => [{ ...event, at: new Date(event.at).toLocaleTimeString() }, ...items].slice(0, 8));
+    });
+  }, [state.settings.keyDiagnosticsEnabled]);
   return (
     <div className="page">
       <PageIntro title="按键配置" description="配置键盘按键、旋钮和快捷动作" actions={<><StatusBadge tone="demo">本机配置 · 未同步</StatusBadge><Button icon={Send} variant="primary" onClick={() => notify("已保存到本机；板子同步协议尚未接入")}>保存配置</Button></>} />
       <Notice tone="demo" title="板子同步待接入">按键映射现在会保存在本机，但还不会写回 EasyInput 板子。板子的 HID 按键输入与配置写回是两条不同链路。</Notice>
+      <SettingRow title="按键诊断模式" description="只记录键名、修饰键和时间，不记录输入内容；不能证明事件来自哪块键盘"><Toggle checked={state.settings.keyDiagnosticsEnabled} onChange={(value) => patch({ settings: { ...state.settings, keyDiagnosticsEnabled: value } })} /></SettingRow>
+      {diagnostics.length > 0 && <Card><div className="history-list">{diagnostics.map((item, index) => <div className="history-item" key={`${item.at}-${index}`}><time>{item.at}</time><div><p>{item.key} / {item.code}</p><small>{[item.control && "Ctrl", item.shift && "Shift", item.alt && "Alt", item.meta && "Meta"].filter(Boolean).join(" + ") || "无修饰键"}</small></div></div>)}</div></Card>}
       <div className="keymap-grid">
         <Card className="keymap-board">
           <div className="device-line"><span>当前电脑 <strong>Windows</strong></span><span>键盘系统 <strong>尚未读取</strong></span><span>同步结果 <strong className="success-text">UI 已就绪</strong></span></div>
@@ -319,13 +340,15 @@ export function ConnectionsPage({ notify }) {
   const setStartupSound = (value) => patch({ settings: { ...state.settings, startupSound: value } });
   const [wifiName, setWifiName] = useState("");
   const [transportCaps, setTransportCaps] = useState(null);
+  const [desktopCaps, setDesktopCaps] = useState({ supported: false });
   useEffect(() => { mockAdapters.device.discoverTransports().then(setTransportCaps).catch(() => setTransportCaps({})); }, []);
+  useEffect(() => { voiceAdapters.desktop.capabilities().then(setDesktopCaps).catch(() => setDesktopCaps({ supported: false })); }, []);
   return (
     <div className="page">
       <PageIntro title="设备与连接" description="检查板子触发、麦克风音频、转写和文字输出链路" actions={<Button icon={Refresh} onClick={() => notify("已刷新浏览器能力；系统设备检测需要桌面桥")}>刷新能力</Button>} />
       <Segmented value={tab} onChange={setTab} options={[{ value: "overview", label: "连接概览" }, { value: "microphone", label: "麦克风" }, { value: "network", label: "Wi-Fi 与蓝牙" }, { value: "sound", label: "提示音" }]} />
       {tab === "overview" && <><Notice tone="warning" title="板子到软件的业务链路尚未接通">Windows 已识别 EasyInput 的 USB HID 键盘接口；但当前 Web 版还不能监听系统级按键，也没有接入板子通过 Wi-Fi 发送的麦克风音频。下一阶段要打通“按板子 → 开始/结束录音 → 转写 → 历史与当前输入框出现文字”。</Notice><div className="connection-cards">
-        <Card interactive><div className="connection-icon"><Link size={28} /></div><div><strong>板子按键触发</strong><p>VID 303A / PID 1006 已被 Windows 识别</p></div><StatusBadge tone="demo">桌面桥待接入</StatusBadge></Card>
+        <Card interactive><div className="connection-icon"><Link size={28} /></div><div><strong>板子按键触发</strong><p>VID 303A / PID 1006 已被 Windows 识别；事件来源仍无法区分键盘</p></div><StatusBadge tone={desktopCaps.supported ? "success" : "demo"}>{desktopCaps.supported ? "全局快捷键已启用" : "桌面桥待接入"}</StatusBadge></Card>
         <Card interactive><div className="connection-icon"><Microphone2 size={28} /></div><div><strong>板子麦克风音频</strong><p>Windows 未见独立音频端点，需验证 2.4GHz Wi-Fi 流</p></div><StatusBadge tone="warning">协议待验证</StatusBadge></Card>
         <Card interactive><div className="connection-icon"><Brain size={28} /></div><div><strong>语音转文字</strong><p>录音与本地保存已完成，STT 服务待接入</p></div><StatusBadge tone="demo">待接入</StatusBadge></Card>
         <Card interactive><div className="connection-icon"><Copy size={28} /></div><div><strong>文字输出</strong><p>历史记录与本地复制链路已具备</p></div><StatusBadge tone="success">软件侧就绪</StatusBadge></Card>
@@ -459,6 +482,7 @@ export function SettingsPage({ notify }) {
   const theme = state.settings.theme;
   const floating = state.settings.floating;
   const updateSettings = (value) => patch({ settings: { ...state.settings, ...value } });
+  useEffect(() => { voiceAdapters.desktop.registerShortcut(state.settings.voiceShortcut).then((result) => { if (!result.registered && window.desktopBridge) notify("全局快捷键注册失败，请检查是否被其他应用占用"); }).catch(() => {}); }, [state.settings.voiceShortcut]);
   const downloadConfig = () => { const blob = new Blob([exportConfig()], { type: "application/json" }); const link = document.createElement("a"); const url = URL.createObjectURL(blob); link.href = url; link.download = "deskmate-config.json"; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0); notify("配置 JSON 已导出"); };
   const importConfig = (event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { replace(JSON.parse(reader.result)); notify("配置已导入"); } catch (error) { notify(`导入失败：${error.message}`); } }; reader.readAsText(file); event.target.value = ""; };
   return (
@@ -467,7 +491,7 @@ export function SettingsPage({ notify }) {
       <div className="settings-layout">
         <Card className="settings-nav">{[{ id: "input", icon: Keyboard, label: "输入与快捷键" }, { id: "format", icon: Book2, label: "文字整理" }, { id: "appearance", icon: Sun, label: "外观与悬浮窗" }, { id: "account", icon: User, label: "账户" }, { id: "diagnostics", icon: Gauge, label: "系统诊断" }].map((item) => <button className={section === item.id ? "is-active" : ""} onClick={() => setSection(item.id)} key={item.id}><item.icon size={19} /><span>{item.label}</span><ArrowRight size={16} /></button>)}</Card>
         <Card className="settings-panel">
-          {section === "input" && <><SectionTitle index="01" title="快捷键" /><SettingRow title="语音输入快捷键" description="按此快捷键开始或结束语音输入"><div className="key-sequence"><Keycap>Ctrl</Keycap><Keycap>Shift</Keycap><Keycap>Space</Keycap></div></SettingRow><SettingRow title="语音编辑快捷键" description="选中文字后说出修改要求"><div className="key-sequence"><Keycap>Ctrl</Keycap><Keycap>Shift</Keycap><Keycap>E</Keycap></div></SettingRow><SettingRow title="快捷键操作方式" description="语音输入和语音编辑共同使用"><Segmented compact value={operation} onChange={(value) => updateSettings({ operation: value })} options={[{ value: "hold", label: "按住说话" }, { value: "toggle", label: "按一下开始" }]} /></SettingRow></>}
+          {section === "input" && <><SectionTitle index="01" title="快捷键" /><SettingRow title="语音输入快捷键" description="桌面壳默认注册 Ctrl+Shift+Space，可在此修改"><input value={state.settings.voiceShortcut} onChange={(event) => updateSettings({ voiceShortcut: event.target.value })} aria-label="全局语音快捷键" /></SettingRow><SettingRow title="语音编辑快捷键" description="选中文字后说出修改要求"><div className="key-sequence"><Keycap>Ctrl</Keycap><Keycap>Shift</Keycap><Keycap>E</Keycap></div></SettingRow><SettingRow title="快捷键操作方式" description="语音输入和语音编辑共同使用"><Segmented compact value={operation} onChange={(value) => updateSettings({ operation: value })} options={[{ value: "hold", label: "按住说话" }, { value: "toggle", label: "按一下开始" }]} /></SettingRow><SettingRow title="转写后文字输出" description="转写服务接入后使用；失败时仍保留历史记录"><Segmented compact value={state.settings.outputMode} onChange={(value) => updateSettings({ outputMode: value })} options={[{ value: "history", label: "仅历史" }, { value: "clipboard", label: "复制" }]} /></SettingRow><SettingRow title="写入当前 Windows 输入框" description="仅桌面壳可用，启用后会模拟 Ctrl+V"><Toggle checked={state.settings.activeWindowOutputEnabled} onChange={(value) => updateSettings({ activeWindowOutputEnabled: value })} /></SettingRow></>}
           {section === "format" && <><SectionTitle index="02" title="文字整理" /><SettingRow title="整理方式" description="所有方式都以不改变原意为前提"><Segmented value={format} onChange={(value) => updateSettings({ formatting: value })} options={[{ value: "raw", label: "原样输出" }, { value: "smart", label: "智能整理" }, { value: "custom", label: "自定义" }]} /></SettingRow><SettingRow title="标点格式" description="仅调整语音编辑结果的标点"><Select value="智能默认"><option>智能默认</option><option>中文标点</option><option>英文标点</option></Select></SettingRow><Notice tone="success" title="当前规则">{format === "raw" ? "保留识别结果，只应用词库纠错。" : format === "smart" ? "自动修正口误、适当分段并精简重复表达。" : "使用你保存的自定义提示词整理文字。"}</Notice></>}
           {section === "appearance" && <><SectionTitle index="03" title="外观与悬浮窗" /><SettingRow title="外观" description="跟随系统外观，或手动固定亮色 / 暗色"><Segmented value={theme} onChange={(value) => updateSettings({ theme: value })} options={[{ value: "system", label: "跟随系统" }, { value: "light", label: "亮色" }, { value: "dark", label: "暗色" }]} /></SettingRow><SettingRow title="悬浮窗显示" description="录音时显示状态和实时识别文字"><Toggle checked={floating} onChange={(value) => updateSettings({ floating: value })} /></SettingRow><SettingRow title="背景不透明度" description="数值越高，悬浮窗背景越实"><Slider label="背景不透明度" value={state.settings.backgroundOpacity} onChange={(value) => updateSettings({ backgroundOpacity: value })} /></SettingRow></>}
           {section === "account" && <><SectionTitle index="04" title="账户" /><div className="account-card"><span className="avatar"><User size={28} /></span><div><strong>DeskMate Demo 用户</strong><p>本地演示账户 · 不上传私人记录</p></div><StatusBadge tone="success">已登录</StatusBadge></div><SettingRow title="当前方案" description="Demo 版本开放全部界面功能"><span className="plan-pill">原型体验版</span></SettingRow><Button variant="ghost" icon={Lock}>隐私与数据说明</Button></>}

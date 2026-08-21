@@ -3,14 +3,14 @@ import { expressionPresets, historyItems, keyActions } from "../appData.js";
 import { AI_EVENT_TYPES } from "../adapters/index.js";
 
 export const STORAGE_KEY = "deskmate.app-state";
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const defaultState = {
   schemaVersion: SCHEMA_VERSION,
   history: historyItems,
   vocabulary: { hotwords: ["DeskMate", "ESP32-S3", "Codex", "Claude Code", "Hermes"], rules: [{ from: "桌面宠物", to: "桌宠" }, { from: "克劳德代码", to: "Claude Code" }] },
   keymap: [...keyActions.slice(0, 8)],
-  settings: { microphoneId: "", microphoneSource: "computer", formatting: "smart", theme: "system", floating: true, backgroundOpacity: 70, operation: "toggle", startupSound: true },
+  settings: { microphoneId: "", microphoneSource: "computer", formatting: "smart", theme: "system", floating: true, backgroundOpacity: 70, operation: "toggle", startupSound: true, voiceShortcut: "Ctrl+Shift+Space", outputMode: "history", activeWindowOutputEnabled: false, keyDiagnosticsEnabled: false },
   expressionMapping: { idle: "sleep", listening: "listen", thinking: "think", working: "focus", waiting_user: "listen", completed: "happy", error: "alert" },
   agentExpressionMapping: { codex: "focus", claude: "listen", hermes: "think", workbody: "happy" },
   currentExpression: "focus",
