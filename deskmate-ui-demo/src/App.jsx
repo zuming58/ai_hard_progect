@@ -140,6 +140,7 @@ function AppContent() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [pendingVoiceEvent, setPendingVoiceEvent] = useState(null);
   const { event, state } = useAppStore();
   useEffect(() => mockAdapters.agentStatus.subscribe(event, { emitCurrent: false }), [event]);
   useEffect(() => {
@@ -155,10 +156,20 @@ function AppContent() {
   }, [state.settings.voiceShortcut]);
   useEffect(() => voiceAdapters.desktop.onVoiceToggle((detail) => {
     window.location.hash = "/voice";
-    deviceEventBus.publish(createDeviceEvent("voice-toggle", "global-shortcut", { phase: detail.phase || null, shortcut: detail.shortcut || "" }, { at: detail.at }));
+    setCurrent("voice");
+    setPendingVoiceEvent(createDeviceEvent("voice-toggle", "global-shortcut", { phase: detail.phase || null, shortcut: detail.shortcut || "" }, { at: detail.at }));
   }), []);
+  useEffect(() => {
+    if (current !== "voice" || !pendingVoiceEvent) return undefined;
+    const timer = window.setTimeout(() => {
+      deviceEventBus.publish(pendingVoiceEvent);
+      setPendingVoiceEvent(null);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [current, pendingVoiceEvent]);
   useEffect(() => voiceAdapters.desktop.onKeyDiagnostic((detail) => {
-    deviceEventBus.publish(createDeviceEvent("key-diagnostic", "global-shortcut", { key: detail.key || "", code: detail.code || "", control: Boolean(detail.control), shift: Boolean(detail.shift), alt: Boolean(detail.alt), meta: Boolean(detail.meta) }, { at: detail.at }));
+    const source = detail.source === "global-shortcut" ? "global-shortcut" : "desktop-input";
+    deviceEventBus.publish(createDeviceEvent("key-diagnostic", source, { key: detail.key || "", code: detail.code || "", control: Boolean(detail.control), shift: Boolean(detail.shift), alt: Boolean(detail.alt), meta: Boolean(detail.meta) }, { at: detail.at }));
   }), []);
   useEffect(() => {
     const onHash = () => setCurrent(resolveHash());

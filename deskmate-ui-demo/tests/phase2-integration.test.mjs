@@ -2,13 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DeviceEventBus, createDeviceEvent, validateDeviceEvent } from "../src/domain/deviceEvents.js";
 import { DeviceSimulator } from "../src/adapters/deviceSimulator.js";
-import { ConfigurableTextOrganizer, HttpSttAdapter, MockSttAdapter } from "../src/adapters/sttAdapters.js";
+import { ConfigurableTextOrganizer, HttpSttAdapter, MockSttAdapter, validateSttEndpoint } from "../src/adapters/sttAdapters.js";
 import { SttAdapter } from "../src/adapters/voiceAdapters.js";
 import { createDiagnosticReport } from "../src/services/diagnostics.js";
 import { processVoiceRecording } from "../src/services/voicePipeline.js";
+import { defaultState, serializeConfig } from "../src/store/appStore.js";
 
 test("versioned events reject malformed input and duplicate simulator events", () => {
   assert.throws(() => validateDeviceEvent({ version: 2 }), /版本/);
+  assert.equal(createDeviceEvent("key-diagnostic", "desktop-input").source, "desktop-input");
   const bus = new DeviceEventBus(); const received = []; bus.subscribe((event) => received.push(event));
   const event = createDeviceEvent("voice-toggle", "simulator", { sequence: 1 });
   assert.equal(bus.publish(event), true); assert.equal(bus.publish(event), false); assert.equal(received.length, 1);
@@ -35,6 +37,25 @@ test("HTTP STT enforces size, cancellation, timeout, and one retry", async () =>
   const timeout = await new HttpSttAdapter({ endpoint: "https://example.invalid", timeoutMs: 5, fetchImpl: (_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new Error("aborted")))) }).transcribe(new Blob()); assert.match(timeout.message, /超时/);
 });
 
+test("HTTP STT requires encryption except for loopback development services", async () => {
+  assert.equal(validateSttEndpoint("https://stt.example.com/v1").protocol, "https:");
+  assert.equal(validateSttEndpoint("http://localhost:8000/stt").hostname, "localhost");
+  assert.throws(() => validateSttEndpoint("http://192.168.1.9/stt"), /HTTPS/);
+  assert.throws(() => validateSttEndpoint("https://user:pass@stt.example.com/v1"), /用户名/);
+  assert.throws(() => validateSttEndpoint("https://stt.example.com/v1?api_key=secret"), /Token/);
+  let called = false;
+  const rejected = await new HttpSttAdapter({ endpoint: "http://stt.example.com", fetchImpl: async () => { called = true; } }).transcribe(new Blob(["audio"]));
+  assert.equal(rejected.status, "error");
+  assert.equal(called, false);
+});
+
+test("configuration exports never include the locally configured STT endpoint", () => {
+  const state = structuredClone(defaultState); state.settings.sttEndpoint = "https://private.example/stt"; state.settings.sttMode = "http";
+  const exported = serializeConfig(state);
+  assert.doesNotMatch(exported, /private\.example/);
+  assert.equal(JSON.parse(exported).settings.sttEndpoint, "");
+});
+
 test("raw smart custom organizers degrade without losing transcription", async () => {
   const organizer = new ConfigurableTextOrganizer(); const rules = [{ from: "桌面宠物", to: "桌宠" }];
   assert.equal((await organizer.organize("桌面宠物", { mode: "raw", rules })).text, "桌宠");
@@ -43,8 +64,9 @@ test("raw smart custom organizers degrade without losing transcription", async (
 });
 
 test("diagnostics export removes secrets and content", () => {
-  const report = createDiagnosticReport({ token: "secret", wifiPassword: "secret", transcript: "spoken", localPath: "private", runtime: "web", nested: { apiKey: "secret", status: "ok" } });
+  const report = createDiagnosticReport({ schemaVersion: 99, generatedAt: "forged", token: "secret", wifiPassword: "secret", transcript: "spoken", localPath: "private", runtime: "web", nested: { apiKey: "secret", status: "ok" } });
   const serialized = JSON.stringify(report); assert.doesNotMatch(serialized, /secret|spoken|private/); assert.equal(report.nested.status, "ok"); assert.equal(report.lanAudio.status, "protocol-unconfirmed");
+  assert.equal(report.schemaVersion, 1); assert.notEqual(report.generatedAt, "forged");
 });
 
 test("mock transcription is saved before clipboard failure", async () => {

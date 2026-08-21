@@ -50,6 +50,12 @@ export function loadState(storage = globalThis.localStorage) {
   }
 }
 
+export function serializeConfig(state) {
+  const safe = structuredClone(state);
+  if (safe.settings) safe.settings.sttEndpoint = "";
+  return JSON.stringify(safe, null, 2);
+}
+
 export function validateConfig(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("配置必须是 JSON 对象");
   if (value.schemaVersion !== undefined && (!Number.isInteger(value.schemaVersion) || value.schemaVersion < 0)) throw new Error("schemaVersion 必须是非负整数数字");
@@ -116,7 +122,7 @@ export function AppStoreProvider({ children }) {
     return validated;
   }, []);
   const event = useCallback((value) => dispatch({ type: "event", value }), []);
-  const exportConfig = useCallback(() => JSON.stringify(state, null, 2), [state]);
+  const exportConfig = useCallback(() => serializeConfig(state), [state]);
   const api = useMemo(() => ({ state, patch, reset, replace, event, exportConfig }), [state, patch, reset, replace, event, exportConfig]);
   return createElement(AppStoreContext.Provider, { value: api }, children);
 }
