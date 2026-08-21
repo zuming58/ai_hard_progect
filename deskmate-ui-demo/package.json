@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
+  "allowScripts": {
+    "electron@36.9.5": true,
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.25.12": true
+  },
   "scripts": {
     "dev": "vite",
     "dev:desktop": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron electron/main.cjs --dev\"",

@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+export function shouldIgnoreToggle(lastToggle, now, debounceMs = 350) {
+  return now - lastToggle < debounceMs;
+}
+
 export function useRecorder({ deviceId, onComplete, onError } = {}) {
   const [status, setStatus] = useState("idle");
   const [seconds, setSeconds] = useState(0);
   const [level, setLevel] = useState(0);
   const [error, setError] = useState("");
-  const recorderRef = useRef(null); const streamRef = useRef(null); const contextRef = useRef(null); const animationRef = useRef(null); const chunksRef = useRef([]); const startedRef = useRef(0);
+  const recorderRef = useRef(null); const streamRef = useRef(null); const contextRef = useRef(null); const animationRef = useRef(null); const chunksRef = useRef([]); const startedRef = useRef(0); const startingRef = useRef(false); const lastToggleRef = useRef(0);
   const stopTracks = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
@@ -19,7 +23,7 @@ export function useRecorder({ deviceId, onComplete, onError } = {}) {
   const start = useCallback(async () => {
     setError("");
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder || !AudioContextClass) { const message = "当前浏览器不支持麦克风录音"; setError(message); setStatus("error"); onError?.(message); return; }
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder || !AudioContextClass) { const message = "当前浏览器不支持麦克风录音"; setError(message); setStatus("error"); onError?.(message); return false; }
     try {
       chunksRef.current = [];
       const stream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId } } : true });
@@ -38,9 +42,26 @@ export function useRecorder({ deviceId, onComplete, onError } = {}) {
           recorderRef.current.stop();
         }
       }, { once: true }));
-    } catch (cause) { stopTracks(); const message = cause?.name === "NotAllowedError" ? "麦克风权限被拒绝，请在浏览器设置中允许访问。" : cause?.name === "NotFoundError" ? "没有找到可用的麦克风设备。" : `无法开始录音：${cause?.message || "未知错误"}`; setError(message); setStatus("error"); onError?.(message); }
+      return true;
+    } catch (cause) { stopTracks(); const message = cause?.name === "NotAllowedError" ? "麦克风权限被拒绝，请在浏览器设置中允许访问。" : cause?.name === "NotFoundError" ? "没有找到可用的麦克风设备。" : `无法开始录音：${cause?.message || "未知错误"}`; setError(message); setStatus("error"); onError?.(message); return false; }
   }, [deviceId, onComplete, onError, stopTracks]);
   const stop = useCallback(() => { if (recorderRef.current?.state === "recording") recorderRef.current.stop(); }, []);
+  const toggle = useCallback(async () => {
+    const now = Date.now();
+    if (shouldIgnoreToggle(lastToggleRef.current, now) || startingRef.current) return { ignored: true };
+    lastToggleRef.current = now;
+    if (recorderRef.current?.state === "recording") {
+      stop();
+      return { ignored: false, action: "stop" };
+    }
+    startingRef.current = true;
+    try {
+      const started = await start();
+      return { ignored: false, action: "start", started };
+    } finally {
+      startingRef.current = false;
+    }
+  }, [start, stop]);
   const cancel = useCallback(() => { if (recorderRef.current?.state === "recording") { recorderRef.current.onstop = null; recorderRef.current.stop(); } recorderRef.current = null; chunksRef.current = []; stopTracks(); setStatus("idle"); setSeconds(0); setLevel(0); }, [stopTracks]);
-  return { status, seconds, level, error, start, stop, cancel };
+  return { status, seconds, level, error, start, stop, toggle, cancel };
 }
