@@ -24,6 +24,7 @@ import { pageMeta } from "./appData.js";
 import { AppStoreProvider, useAppStore } from "./store/appStore.js";
 import { mockAdapters } from "./adapters/index.js";
 import { voiceAdapters } from "./adapters/voiceAdapters.js";
+import { createDeviceEvent, deviceEventBus } from "./domain/deviceEvents.js";
 import {
   AgentsPage,
   ConnectionsPage,
@@ -154,7 +155,7 @@ function AppContent() {
   }, [state.settings.voiceShortcut]);
   useEffect(() => voiceAdapters.desktop.onVoiceToggle((detail) => {
     window.location.hash = "/voice";
-    window.setTimeout(() => window.dispatchEvent(new CustomEvent("deskmate:voice-toggle", { detail })), 0);
+    deviceEventBus.publish(createDeviceEvent("voice-toggle", "global-shortcut", { phase: detail.phase || null, shortcut: detail.shortcut || "" }, { at: detail.at }));
   }), []);
   useEffect(() => {
     const onHash = () => setCurrent(resolveHash());

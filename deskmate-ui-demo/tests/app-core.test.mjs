@@ -5,7 +5,7 @@ import { AI_EVENT_TYPES, AgentStatusAdapter } from "../src/adapters/index.js";
 
 test("migrates legacy storage to current schema without dropping defaults", () => {
   const result = migrateState({ schemaVersion: 0, hotwords: ["旧词"], rules: [] });
-  assert.equal(result.schemaVersion, 2);
+  assert.equal(result.schemaVersion, 3);
   assert.deepEqual(result.vocabulary.hotwords, ["旧词"]);
   assert.equal(result.settings.theme, defaultState.settings.theme);
   assert.equal(result.keymap.length, 8);

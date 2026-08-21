@@ -1,0 +1,57 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { DeviceEventBus, createDeviceEvent, validateDeviceEvent } from "../src/domain/deviceEvents.js";
+import { DeviceSimulator } from "../src/adapters/deviceSimulator.js";
+import { ConfigurableTextOrganizer, HttpSttAdapter, MockSttAdapter } from "../src/adapters/sttAdapters.js";
+import { SttAdapter } from "../src/adapters/voiceAdapters.js";
+import { createDiagnosticReport } from "../src/services/diagnostics.js";
+import { processVoiceRecording } from "../src/services/voicePipeline.js";
+
+test("versioned events reject malformed input and duplicate simulator events", () => {
+  assert.throws(() => validateDeviceEvent({ version: 2 }), /版本/);
+  const bus = new DeviceEventBus(); const received = []; bus.subscribe((event) => received.push(event));
+  const event = createDeviceEvent("voice-toggle", "simulator", { sequence: 1 });
+  assert.equal(bus.publish(event), true); assert.equal(bus.publish(event), false); assert.equal(received.length, 1);
+});
+
+test("simulator debounces rapid presses and reports disconnect/reconnect", () => {
+  let now = 1000; const bus = new DeviceEventBus(); const events = []; bus.subscribe((event) => events.push(event)); const simulator = new DeviceSimulator(bus, { now: () => now });
+  assert.equal(simulator.toggle(), true); now += 20; assert.equal(simulator.toggle(), false); simulator.disconnect(); assert.equal(simulator.toggle(), false); simulator.reconnect(); now += 400; assert.equal(simulator.toggle(), true);
+  assert.deepEqual(events.map((event) => event.type), ["voice-toggle", "connection-change", "connection-change", "voice-toggle"]);
+});
+
+test("mock STT succeeds while unconfigured real adapter stays pending", async () => {
+  assert.equal((await new MockSttAdapter("确定文本").transcribe(new Blob())).text, "确定文本");
+  assert.equal((await new SttAdapter().transcribe(new Blob())).status, "pending");
+});
+
+test("HTTP STT enforces size, cancellation, timeout, and one retry", async () => {
+  const tooLarge = await new HttpSttAdapter({ endpoint: "https://example.invalid", maxBytes: 1 }).transcribe(new Blob(["xx"])); assert.match(tooLarge.message, /超过/);
+  const cancelled = new AbortController(); cancelled.abort(); assert.equal((await new HttpSttAdapter({ endpoint: "https://example.invalid" }).transcribe(new Blob(), { signal: cancelled.signal })).status, "cancelled");
+  let calls = 0; const retried = await new HttpSttAdapter({ endpoint: "https://example.invalid", fetchImpl: async () => { calls += 1; if (calls === 1) throw new Error("temporary"); return { ok: true, json: async () => ({ text: "成功" }) }; } }).transcribe(new Blob()); assert.equal(retried.status, "success"); assert.equal(calls, 2);
+  const timeout = await new HttpSttAdapter({ endpoint: "https://example.invalid", timeoutMs: 5, fetchImpl: (_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new Error("aborted")))) }).transcribe(new Blob()); assert.match(timeout.message, /超时/);
+});
+
+test("raw smart custom organizers degrade without losing transcription", async () => {
+  const organizer = new ConfigurableTextOrganizer(); const rules = [{ from: "桌面宠物", to: "桌宠" }];
+  assert.equal((await organizer.organize("桌面宠物", { mode: "raw", rules })).text, "桌宠");
+  const smart = await organizer.organize("原文", { mode: "smart" }); assert.equal(smart.text, "原文"); assert.equal(smart.fallback, true);
+  const custom = await organizer.organize("原文", { mode: "custom", customRule: "" }); assert.equal(custom.text, "原文"); assert.equal(custom.fallback, true);
+});
+
+test("diagnostics export removes secrets and content", () => {
+  const report = createDiagnosticReport({ token: "secret", wifiPassword: "secret", transcript: "spoken", localPath: "private", runtime: "web", nested: { apiKey: "secret", status: "ok" } });
+  const serialized = JSON.stringify(report); assert.doesNotMatch(serialized, /secret|spoken|private/); assert.equal(report.nested.status, "ok"); assert.equal(report.lanAudio.status, "protocol-unconfirmed");
+});
+
+test("mock transcription is saved before clipboard failure", async () => {
+  const saved = [];
+  const response = await processVoiceRecording({ blob: new Blob(["audio"]), stt: new MockSttAdapter("模拟转写"), organizer: new ConfigurableTextOrganizer(), organizerOptions: { mode: "raw" }, saveHistory: async (item) => { saved.push(item); return item; }, output: { output: async () => { throw new Error("clipboard denied"); } }, outputMode: "clipboard" });
+  assert.equal(saved[0].text, "模拟转写"); assert.equal(response.output.ok, false);
+});
+
+test("STT error keeps recording history fallback", async () => {
+  const saved = [];
+  await processVoiceRecording({ blob: new Blob(["audio"]), stt: { transcribe: async () => ({ status: "error", text: "", provider: "test", durationMs: 1, message: "failed" }) }, organizer: new ConfigurableTextOrganizer(), saveHistory: async (item) => { saved.push(item); return item; }, output: { output: async () => ({ ok: true }) } });
+  assert.equal(saved[0].text, "录音完成，等待转写服务");
+});

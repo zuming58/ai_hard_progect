@@ -2,6 +2,8 @@ export class SttAdapter {
   async transcribe() { return { status: "pending", text: "", message: "录音完成，等待转写服务" }; }
 }
 
+export { MockSttAdapter, HttpSttAdapter, ConfigurableTextOrganizer } from "./sttAdapters.js";
+
 export class TextOrganizerAdapter {
   async organize(text) { return String(text || ""); }
 }
