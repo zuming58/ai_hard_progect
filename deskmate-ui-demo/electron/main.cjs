@@ -6,6 +6,7 @@ const fs = require("fs");
 const { normalizeShortcut } = require("./shortcut.cjs");
 const { InputBridgeManager } = require("./input-bridge.cjs");
 const { transcribe: transcribeBailian } = require("./bailian.cjs");
+const { BailianRealtimeSession } = require("./bailian-realtime.cjs");
 const { createSecureBailianStore } = require("./secure-bailian.cjs");
 
 const DEFAULT_SHORTCUT = "Ctrl+Shift+Space";
@@ -24,11 +25,14 @@ let inputBridge;
 let shortcut = DEFAULT_SHORTCUT;
 let voiceSessionRecording = false;
 let voiceTargetWindow = null;
+let voiceTargetCaptureToken = 0;
+let voiceTargetCapturePromise = Promise.resolve(null);
 let bailianStore;
 let isQuitting = false;
-let lastVoiceState = { state: "idle", message: "准备就绪", seconds: 0, level: 0, floating: true };
+let lastVoiceState = { state: "idle", message: "准备就绪", transcript: "", seconds: 0, level: 0, floating: true };
 let lastVoiceToggleAt = 0;
 const activeBailianRequests = new Map();
+const activeRealtimeSessions = new Map();
 const smokeMode = process.argv.includes("--deskmate-smoke-test");
 const bailianTestAudio = process.argv.find((value) => value.startsWith("--bailian-test-audio="))?.slice("--bailian-test-audio=".length) || "";
 let smokeStage = 0;
@@ -108,7 +112,14 @@ async function emitVoiceToggle(source = "global-shortcut", label = shortcut) {
   if (now - lastVoiceToggleAt < 350) return { ignored: true, reason: "duplicate-trigger" };
   lastVoiceToggleAt = now;
   const phase = voiceSessionRecording ? "stop" : "start";
-  if (phase === "start") voiceTargetWindow = await getForegroundWindowId();
+  if (phase === "start") {
+    const captureToken = ++voiceTargetCaptureToken;
+    voiceTargetWindow = null;
+    voiceTargetCapturePromise = getForegroundWindowId().then((windowId) => {
+      if (captureToken === voiceTargetCaptureToken) voiceTargetWindow = windowId;
+      return windowId;
+    }).catch(() => null);
+  }
   voiceSessionRecording = phase === "start";
   const at = new Date().toISOString();
   const payload = { source, shortcut: label, phase, targetCaptured: Boolean(voiceTargetWindow), at };
@@ -119,6 +130,9 @@ async function emitVoiceToggle(source = "global-shortcut", label = shortcut) {
 
 function emitVoiceCancel(source = "keyboard") {
   voiceSessionRecording = false;
+  voiceTargetCaptureToken += 1;
+  voiceTargetWindow = null;
+  voiceTargetCapturePromise = Promise.resolve(null);
   sendToMain("voice-cancel", { source, at: new Date().toISOString() });
 }
 
@@ -140,6 +154,7 @@ function registerShortcut(nextShortcut = shortcut) {
 async function pasteIntoCapturedWindow(text) {
   const value = String(text || "");
   if (!value || value.length > 100000) return { ok: false, reason: "invalid-text" };
+  if (!voiceTargetWindow) await voiceTargetCapturePromise;
   if (!voiceTargetWindow) return { ok: false, reason: "no-captured-target" };
   const currentWindow = await getForegroundWindowId();
   if (!currentWindow || currentWindow !== voiceTargetWindow) return { ok: false, reason: "target-window-changed" };
@@ -151,8 +166,8 @@ async function pasteIntoCapturedWindow(text) {
 
 function createOverlayWindow() {
   overlayWindow = new BrowserWindow({
-    width: 360,
-    height: 104,
+    width: 520,
+    height: 58,
     frame: false,
     transparent: true,
     resizable: false,
@@ -165,7 +180,7 @@ function createOverlayWindow() {
   });
   overlayWindow.setAlwaysOnTop(true, "floating");
   overlayWindow.setIgnoreMouseEvents(true);
-  const html = "<!doctype html><html><head><meta charset='utf-8'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; style-src 'unsafe-inline'\"><style>html,body{margin:0;background:transparent;font-family:'Segoe UI','Microsoft YaHei',sans-serif;color:#eaf6ff}.shell{box-sizing:border-box;height:92px;margin:6px;padding:15px 18px;border:1px solid rgba(75,207,239,.55);border-radius:22px;background:rgba(24,33,46,.94);box-shadow:0 14px 35px rgba(13,28,46,.28);display:flex;align-items:center;gap:14px}.orb{width:44px;height:44px;border-radius:15px;background:linear-gradient(145deg,#287df5,#32d1e9);box-shadow:0 0 24px rgba(49,208,234,.38);display:grid;place-items:center}.orb:after{content:'';width:16px;height:16px;border:3px solid white;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite}.completed .orb:after{content:'✓';border:0;animation:none;font-size:24px}.error .orb{background:linear-gradient(145deg,#df5858,#fa976c)}.error .orb:after{content:'!';border:0;animation:none;font-size:24px}.cancelled .orb:after{content:'×';border:0;animation:none;font-size:26px}.copy{min-width:0;flex:1}.copy strong{font-size:16px}.copy p{margin:5px 0 0;color:#aebccc;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.meter{width:58px;text-align:right;color:#56d8ef;font-variant-numeric:tabular-nums}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div id='root'></div></body></html>";
+  const html = "<!doctype html><html><head><meta charset='utf-8'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; style-src 'unsafe-inline'\"><style>html,body{margin:0;background:transparent;font-family:'Segoe UI','Microsoft YaHei',sans-serif;color:#f7fbff;overflow:hidden}.shell{box-sizing:border-box;height:46px;margin:6px;padding:0 10px 0 12px;border:1px solid rgba(102,205,238,.38);border-radius:14px;background:rgba(22,31,44,.84);box-shadow:0 8px 22px rgba(8,20,36,.18);backdrop-filter:blur(16px);display:flex;align-items:center;gap:10px}.state-dot{width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:#44c7eb;box-shadow:0 0 0 3px rgba(68,199,235,.12)}.recording .state-dot{animation:pulse 1.2s ease-out infinite}.error .state-dot{background:#ff7b83}.completed .state-dot{background:#5bd5ae}.wave{width:62px;height:22px;display:flex;align-items:center;justify-content:center;gap:2px;flex:0 0 auto}.wave i{display:block;width:2px;height:var(--h);border-radius:2px;background:#58d4ee;opacity:.9;transition:height .12s ease}.copy{min-width:0;flex:1;color:#fff;font-size:12px;white-space:nowrap;overflow:hidden}.copy.placeholder{color:#9babbc}.copy .lead{color:#8ea1b5}.meter{width:42px;text-align:right;color:#65d7ef;font-size:11px;font-variant-numeric:tabular-nums}.escape{height:22px;padding-left:8px;border-left:1px solid rgba(255,255,255,.11);display:flex;align-items:center;color:#8fa1b3;font-size:9px;white-space:nowrap}@keyframes pulse{70%{box-shadow:0 0 0 7px rgba(68,199,235,0)}100%{box-shadow:0 0 0 0 rgba(68,199,235,0)}}</style></head><body><div id='root'></div></body></html>";
   overlayWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 }
 
@@ -173,7 +188,7 @@ function positionAndShowOverlay() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   const area = screen.getPrimaryDisplay().workArea;
   const [width, height] = overlayWindow.getSize();
-  overlayWindow.setPosition(area.x + area.width - width - 24, area.y + area.height - height - 24, false);
+  overlayWindow.setPosition(Math.round(area.x + (area.width - width) / 2), area.y + area.height - height - 18, false);
   overlayWindow.showInactive();
 }
 
@@ -182,6 +197,7 @@ function updateVoiceState(value = {}) {
   lastVoiceState = {
     state,
     message: String(value.message || "").slice(0, 240),
+    transcript: String(value.transcript || "").slice(-500),
     seconds: Math.max(0, Math.min(36000, Number(value.seconds) || 0)),
     level: Math.max(0, Math.min(100, Number(value.level) || 0)),
     floating: value.floating !== false,
@@ -326,12 +342,38 @@ app.whenReady().then(async () => {
     finally { activeBailianRequests.delete(requestId); }
   });
   handleTrusted("bailian:cancel", (requestId) => { const controller = activeBailianRequests.get(String(requestId || "")); if (!controller) return { ok: false, reason: "request-not-active" }; controller.abort(); return { ok: true }; });
+  handleTrusted("bailian:realtime-start", async () => {
+    const sessionId = `realtime-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const realtime = new BailianRealtimeSession({
+      ...bailianStore.loadSecret(),
+      onEvent: (event) => {
+        sendToMain("bailian-realtime-event", { sessionId, ...event });
+        if (["closed", "finished"].includes(event.kind)) activeRealtimeSessions.delete(sessionId);
+      },
+    });
+    activeRealtimeSessions.set(sessionId, realtime);
+    try { await realtime.start(); return { ok: true, sessionId }; }
+    catch (error) { activeRealtimeSessions.delete(sessionId); realtime.cancel(); throw error; }
+  });
+  handleTrusted("bailian:realtime-append", (value = {}) => {
+    const realtime = activeRealtimeSessions.get(String(value.sessionId || ""));
+    if (!realtime) return { ok: false, reason: "session-not-active" };
+    const audio = value.audio instanceof ArrayBuffer ? Buffer.from(value.audio) : Buffer.from(value.audio || []);
+    return { ok: realtime.append(audio) };
+  });
+  handleTrusted("bailian:realtime-finish", (sessionId) => ({ ok: activeRealtimeSessions.get(String(sessionId || ""))?.finish() || false }));
+  handleTrusted("bailian:realtime-cancel", (sessionId) => {
+    const key = String(sessionId || "");
+    const realtime = activeRealtimeSessions.get(key);
+    if (!realtime) return { ok: false, reason: "session-not-active" };
+    realtime.cancel(); activeRealtimeSessions.delete(key); return { ok: true };
+  });
   registerShortcut(DEFAULT_SHORTCUT);
   startInputBridge();
   app.on("activate", () => showMain());
   app.on("second-instance", () => showMain());
 });
 
-app.on("before-quit", () => { isQuitting = true; inputBridge?.stop(); activeBailianRequests.forEach((controller) => controller.abort()); activeBailianRequests.clear(); });
+app.on("before-quit", () => { isQuitting = true; inputBridge?.stop(); activeBailianRequests.forEach((controller) => controller.abort()); activeBailianRequests.clear(); activeRealtimeSessions.forEach((realtime) => realtime.cancel()); activeRealtimeSessions.clear(); });
 app.on("will-quit", () => globalShortcut.unregisterAll());
 app.on("window-all-closed", () => { if (process.platform === "darwin" && !isQuitting) return; });

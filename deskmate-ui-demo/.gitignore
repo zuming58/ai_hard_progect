@@ -7,3 +7,4 @@ native/**/publish/
 .edge-qa/
 vite*.stdout.log
 vite*.stderr.log
+qa/overlay-full.png

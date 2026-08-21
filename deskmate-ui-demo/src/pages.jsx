@@ -161,11 +161,17 @@ export function VoicePage({ notify }) {
   const [desktopCaps, setDesktopCaps] = useState({ supported: false, shortcutRegistered: false });
   const [lastDeviceEvent, setLastDeviceEvent] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [realtimeStatus, setRealtimeStatus] = useState("idle");
   const [session, dispatchSession] = useReducer(voiceSessionReducer, initialVoiceSession);
   const toggleRef = useRef(() => {});
   const cancelRef = useRef(() => {});
   const simulatorRef = useRef(new DeviceSimulator(deviceEventBus));
   const sttAbortRef = useRef(null);
+  const realtimeSessionRef = useRef("");
+  const realtimeAttemptRef = useRef(0);
+  const realtimeWantedRef = useRef(false);
+  const pendingRealtimeAudioRef = useRef([]);
   const handleComplete = useCallback(async (item) => {
     dispatchSession({ type: "transition", state: "transcribing", detail: { message: "正在发送到千问语音识别" } });
     const id = globalThis.crypto?.randomUUID?.() || `recording-${Date.now()}`;
@@ -208,28 +214,96 @@ export function VoicePage({ notify }) {
       setProcessing(false);
     }
   }, [notify, patch, state.history, state.settings]);
-  const { status, seconds, level, error, stop, toggle, cancel } = useRecorder({ deviceId: source || undefined, onComplete: handleComplete, onError: (message) => { dispatchSession({ type: "transition", state: "error", detail: { message } }); notify(message); } });
+  const appendRealtimeAudio = useCallback((audio) => {
+    const sessionId = realtimeSessionRef.current;
+    if (!sessionId) {
+      if (realtimeWantedRef.current && pendingRealtimeAudioRef.current.length < 24) pendingRealtimeAudioRef.current.push(audio);
+      return;
+    }
+    if (typeof globalThis.desktopBridge?.appendBailianRealtime !== "function") return;
+    globalThis.desktopBridge.appendBailianRealtime({ sessionId, audio }).catch(() => {});
+  }, []);
+  const { status, seconds, level, error, stop, toggle, cancel } = useRecorder({ deviceId: source || undefined, onComplete: handleComplete, onAudioChunk: appendRealtimeAudio, onError: (message) => { dispatchSession({ type: "transition", state: "error", detail: { message } }); notify(message); } });
   const recording = status === "recording";
   const processingRef = useRef(processing); processingRef.current = processing;
+  const beginRealtimePreview = () => {
+    const attempt = ++realtimeAttemptRef.current;
+    realtimeWantedRef.current = true;
+    pendingRealtimeAudioRef.current = [];
+    setRealtimeStatus("connecting");
+    if (state.settings.sttMode !== "bailian" || typeof globalThis.desktopBridge?.startBailianRealtime !== "function") {
+      setRealtimeStatus("unavailable");
+      return;
+    }
+    globalThis.desktopBridge.startBailianRealtime().then((realtime) => {
+      const sessionId = realtime?.sessionId || "";
+      if (attempt !== realtimeAttemptRef.current || !realtimeWantedRef.current) {
+        if (sessionId) globalThis.desktopBridge?.cancelBailianRealtime?.(sessionId).catch(() => {});
+        return;
+      }
+      realtimeSessionRef.current = sessionId;
+      setRealtimeStatus(realtime?.ok ? "ready" : "unavailable");
+      if (!sessionId) return;
+      const pending = pendingRealtimeAudioRef.current.splice(0);
+      pending.forEach((audio) => globalThis.desktopBridge?.appendBailianRealtime?.({ sessionId, audio }).catch(() => {}));
+    }).catch(() => {
+      if (attempt === realtimeAttemptRef.current) setRealtimeStatus("unavailable");
+    });
+  };
+  const invalidateRealtimeStart = () => {
+    realtimeWantedRef.current = false;
+    realtimeAttemptRef.current += 1;
+    pendingRealtimeAudioRef.current = [];
+  };
   toggleRef.current = async () => {
     if (processingRef.current) return { ignored: true, reason: "processing" };
+    const starting = status !== "recording";
+    if (starting) {
+      setLiveTranscript("");
+      dispatchSession({ type: "transition", state: "recording", detail: { message: "正在使用电脑麦克风录音" } });
+      beginRealtimePreview();
+    }
     const result = await toggle();
-    if (result.action === "start" && result.started) dispatchSession({ type: "transition", state: "recording", detail: { message: "正在使用电脑麦克风录音" } });
+    if (result.action === "start" && !result.started) {
+      invalidateRealtimeStart();
+      if (realtimeSessionRef.current) globalThis.desktopBridge?.cancelBailianRealtime?.(realtimeSessionRef.current).catch(() => {});
+      realtimeSessionRef.current = "";
+    }
+    if (result.ignored && starting) {
+      invalidateRealtimeStart();
+      dispatchSession({ type: "reset" });
+    }
+    if (result.action === "stop") {
+      invalidateRealtimeStart();
+      if (realtimeSessionRef.current) globalThis.desktopBridge?.finishBailianRealtime?.(realtimeSessionRef.current).catch(() => {});
+    }
     return result;
   };
   cancelRef.current = () => {
     sttAbortRef.current?.abort();
+    invalidateRealtimeStart();
+    if (realtimeSessionRef.current) globalThis.desktopBridge?.cancelBailianRealtime?.(realtimeSessionRef.current).catch(() => {});
+    realtimeSessionRef.current = "";
     cancel();
     setProcessing(false);
     dispatchSession({ type: "reset" });
     voiceAdapters.desktop.setVoiceState({ state: "cancelled", message: "已取消当前语音输入", floating: state.settings.floating }).catch(() => {});
   };
   const recordingRef = useRef(recording); recordingRef.current = recording;
+  useEffect(() => globalThis.desktopBridge?.onBailianRealtimeEvent?.((event) => {
+    if (!event || event.sessionId !== realtimeSessionRef.current) return;
+    if (["preview", "completed"].includes(event.kind)) {
+      setLiveTranscript(String(event.preview || event.text || ""));
+      setRealtimeStatus("receiving");
+    } else if (event.kind === "error") setRealtimeStatus("unavailable");
+    else if (event.kind === "ready") setRealtimeStatus("ready");
+    else if (["finished", "closed"].includes(event.kind)) setRealtimeStatus("finished");
+  }), []);
   useEffect(() => deviceEventBus.subscribe((event) => { setLastDeviceEvent(event); if (event.type === "voice-toggle") toggleRef.current(); if (event.type === "voice-cancel") cancelRef.current(); if (event.type === "connection-change" && !event.payload.connected && recordingRef.current) { stop(); notify("EasyInput 已断线，当前录音已安全停止并保留"); } }), [notify, stop]);
   useEffect(() => { voiceAdapters.desktop.setVoiceRecording(recording).catch(() => {}); }, [recording]);
   useEffect(() => {
-    voiceAdapters.desktop.setVoiceState({ state: session.state, message: session.message, seconds, level, floating: state.settings.floating }).catch(() => {});
-  }, [level, seconds, session.message, session.state, state.settings.floating]);
+    voiceAdapters.desktop.setVoiceState({ state: session.state, message: session.message, transcript: session.state === "recording" ? liveTranscript : "", seconds, level, floating: state.settings.floating }).catch(() => {});
+  }, [level, liveTranscript, seconds, session.message, session.state, state.settings.floating]);
   useEffect(() => { voiceAdapters.desktop.capabilities().then(setDesktopCaps).catch(() => setDesktopCaps({ supported: false, shortcutRegistered: false })); }, [state.settings.voiceShortcut]);
   useEffect(() => {
     if (!recordingItem?.blob) { setRecordingUrl(""); return undefined; }
@@ -262,7 +336,7 @@ export function VoicePage({ notify }) {
             {Array.from({ length: 42 }).map((_, index) => <span key={index} style={{ "--height": `${recording ? Math.max(8, level * (0.35 + ((index % 5) / 10))) : 8 + ((index * 7) % 14)}px`, "--delay": `${index * -0.04}s` }} />)}
           </div>
           <div className="recorder__time">{time}</div>
-          <p className="recorder__transcript">{transcript || (recording ? "正在采集音频…" : "按下按钮或使用快捷键开始录音")}</p>
+          <p className="recorder__transcript">{recording ? (liveTranscript || (realtimeStatus === "unavailable" ? "正在采集音频；录音结束后显示完整文字" : level > 2 ? "已检测到声音，正在实时识别…" : "等待你开始说话…")) : transcript || "按下按钮或使用快捷键开始录音"}</p>
           <Button icon={recording ? PlayerPause : Microphone2} variant={recording ? "danger" : "primary"} onClick={toggleRef.current} disabled={processing}>{recording ? "停止录音" : "开始录音"}</Button>
           {recording && <Button variant="ghost" onClick={cancelRef.current}>取消</Button>}
           {processing && <Button variant="ghost" onClick={cancelRef.current}>取消转写</Button>}

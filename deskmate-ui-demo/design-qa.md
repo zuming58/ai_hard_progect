@@ -1,32 +1,26 @@
-# DeskMate UI Demo — Design QA
+# Recording Overlay Design QA
 
-## Evidence
+- References:
+  - `C:/Users/ADMINI~1/AppData/Local/Temp/codex-clipboard-b33b01dc-66f9-4150-93f8-d4ec13c003f5.png`
+  - `C:/Users/ADMINI~1/AppData/Local/Temp/codex-clipboard-3a01b8e0-3cd2-40ca-8557-cc4f737bcb79.png`
+- Implemented capture: `qa/overlay-component.png`
+- Viewport/state: Windows desktop recording overlay, active recording, long live transcript present.
 
-- Visual source of truth: `F:\Codex\ai hardware\项目设计\Figma-工作台-首页预览-v0.1.png`
-- Implementation capture: `F:\Codex\ai hardware\deskmate-ui-demo\qa-dashboard.png`
-- Combined comparison: `F:\Codex\ai hardware\deskmate-ui-demo\qa-comparison.png`
-- Viewport: 1440 × 1024 CSS pixels, device scale factor 1
-- State: 工作台 / Codex 正在工作 / 专注表情
+## Comparison
 
-## Required-surface review
+| Requirement | Result |
+| --- | --- |
+| Center the overlay above the bottom work area | Passed — the focusless window is horizontally centered. |
+| Reduce the visual footprint | Passed — 46 px content height inside a 58 px transparent window. |
+| Keep the recording view to one line | Passed — waveform, rolling transcript, timer, and cancel hint share one row. |
+| Remove the redundant recording title | Passed — recording state is communicated by the pulsing dot and waveform. |
+| Show the latest recognized speech | Passed — long transcripts are tail-windowed to the newest 24 characters instead of preserving the beginning. |
+| Make the overlay appear without waiting for background work | Passed — the key event reaches the recorder before either the foreground-window PowerShell query or realtime WebSocket handshake finishes; early PCM is buffered and flushed after connection. |
+| Preserve timer and cancellation guidance | Passed — timer remains right-aligned and `Esc 取消` stays visible. |
+| Avoid stealing focus from the target input | Passed — the overlay remains focusless and ignores mouse input. |
 
-- Typography: passed — system Chinese sans-serif hierarchy is legible and consistent; numeric progress and task titles preserve the visual emphasis of the target.
-- Spacing and layout: passed — graphite sidebar, light workspace, large character stage, and right task/status column match the selected composition at the target viewport.
-- Colors and tokens: passed — light gray canvas, graphite navigation, cyan character glow, blue progress accents, and green connection states remain consistent across pages.
-- Image quality: passed — the custom DeskMate face asset is sharp, uncropped, and rendered at an appropriate density.
-- Copy and content: passed — realistic Chinese product copy, agent states, hardware labels, and mock sensor data replace placeholders.
+## Remaining validation
 
-## Interaction and runtime review
-
-- All 12 navigation destinations render with the expected page title.
-- Voice recording starts, updates its timer, stops, and produces a mock transcript.
-- History copy feedback, key selection, expression selection, motion preview, and diagnostics controls work.
-- No runtime exceptions or browser console errors were detected in the automated interaction pass.
-- Hardware-dependent actions are explicitly marked as Demo or 待接入.
-
-## Comparison history
-
-1. Initial runtime pass found a missing favicon request; a local product asset is now used as the favicon.
-2. Final visual comparison found no P0, P1, or P2 defects. The implementation intentionally adds the complete 12-item navigation and a higher-detail face/device asset while retaining the approved layout and visual language.
+- Physical-board verification is required for perceived F22-to-overlay latency and continuous transcript tail movement.
 
 final result: passed

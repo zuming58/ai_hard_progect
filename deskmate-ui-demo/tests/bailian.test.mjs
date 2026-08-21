@@ -7,6 +7,7 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const { buildRequest, endpointForWorkspace, parseResponse, transcribe, validateApiKey } = require("../electron/bailian.cjs");
+const { parseRealtimeMessage, realtimeEndpoint } = require("../electron/bailian-realtime.cjs");
 const { createSecureBailianStore } = require("../electron/secure-bailian.cjs");
 
 test("Bailian request uses base64 audio without exposing key in the body", () => {
@@ -38,6 +39,14 @@ test("Bailian request can be cancelled by the voice session", async () => {
   const pending = transcribe({ apiKey: "sk-12345678", audio: Buffer.from("audio"), signal: controller.signal, fetchImpl: (_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true })) });
   controller.abort();
   await assert.rejects(pending, /已取消/);
+});
+
+test("Bailian realtime events expose only live transcript fields", () => {
+  assert.match(realtimeEndpoint(""), /wss:\/\/dashscope\.aliyuncs\.com\/api-ws\/v1\/realtime/);
+  assert.match(realtimeEndpoint("workspace-123"), /workspace-123\.cn-beijing\.maas\.aliyuncs\.com/);
+  assert.deepEqual(parseRealtimeMessage(JSON.stringify({ type: "conversation.item.input_audio_transcription.text", item_id: "item-1", text: "今天", stash: "天气" })), { kind: "preview", itemId: "item-1", text: "今天", stash: "天气" });
+  assert.equal(parseRealtimeMessage(JSON.stringify({ type: "conversation.item.input_audio_transcription.completed", item_id: "item-1", transcript: "今天天气很好", language: "zh", emotion: "neutral" })).text, "今天天气很好");
+  assert.equal(parseRealtimeMessage("not-json"), null);
 });
 
 test("Bailian credentials are encrypted at rest and status never returns the key", () => {

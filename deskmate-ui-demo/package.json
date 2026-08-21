@@ -24,7 +24,8 @@
     "@vitejs/plugin-react": "5.0.4",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "vite": "6.4.2"
+    "vite": "6.4.2",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "concurrently": "^9.2.0",
@@ -35,11 +36,26 @@
   "build": {
     "appId": "com.deskmate.app",
     "productName": "DeskMate",
-    "files": ["electron/**/*", "dist/client/**/*", "package.json"],
-    "extraResources": [
-      { "from": "native/DeskMate.InputBridge/publish", "to": "input-bridge", "filter": ["DeskMate.InputBridge.exe"] }
+    "files": [
+      "electron/**/*",
+      "dist/client/**/*",
+      "package.json"
     ],
-    "directories": { "output": "release" },
-    "win": { "target": "dir", "executableName": "DeskMate" }
+    "extraResources": [
+      {
+        "from": "native/DeskMate.InputBridge/publish",
+        "to": "input-bridge",
+        "filter": [
+          "DeskMate.InputBridge.exe"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "dir",
+      "executableName": "DeskMate"
+    }
   }
 }
