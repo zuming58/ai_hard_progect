@@ -1,9 +1,11 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, clipboard, session } = require("electron");
+const { app, BrowserWindow, globalShortcut, ipcMain, clipboard, session, safeStorage } = require("electron");
 const path = require("path");
 const { fileURLToPath } = require("url");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const { normalizeShortcut } = require("./shortcut.cjs");
+const { transcribe: transcribeBailian } = require("./bailian.cjs");
+const { createSecureBailianStore } = require("./secure-bailian.cjs");
 
 const DEFAULT_SHORTCUT = "Ctrl+Shift+Space";
 const DEFAULT_DEV_URL = "http://localhost:5173";
@@ -15,6 +17,7 @@ let mainWindow;
 let shortcut = DEFAULT_SHORTCUT;
 let voiceSessionRecording = false;
 let voiceTargetWindow = null;
+let bailianStore;
 const smokeMode = process.argv.includes("--deskmate-smoke-test");
 let smokeStage = 0;
 
@@ -173,6 +176,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  bailianStore = createSecureBailianStore({ safeStorage, userDataPath: app.getPath("userData") });
   createWindow();
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => callback(permission === "media" && isAllowedAppUrl(webContents.getURL())));
   handleTrusted("desktop:get-capabilities", () => ({ supported: true, platform: process.platform, shortcut, shortcutRegistered: globalShortcut.isRegistered(shortcut) }));
@@ -189,6 +193,14 @@ app.whenReady().then(() => {
   });
   handleTrusted("desktop:paste-active-window", (text) => pasteIntoCapturedWindow(text));
   handleTrusted("desktop:key-diagnostic", (value) => ({ ok: true, event: value }));
+  handleTrusted("bailian:get-status", () => bailianStore.status());
+  handleTrusted("bailian:save-credentials", (value) => bailianStore.save(value || {}));
+  handleTrusted("bailian:clear-credentials", () => bailianStore.clear());
+  handleTrusted("bailian:transcribe", async (value = {}) => {
+    const secret = bailianStore.loadSecret();
+    const audio = value.audio instanceof ArrayBuffer ? Buffer.from(value.audio) : Buffer.from(value.audio || []);
+    return transcribeBailian({ ...secret, audio, mimeType: value.mimeType });
+  });
   registerShortcut(DEFAULT_SHORTCUT);
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
