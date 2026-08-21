@@ -18,11 +18,15 @@ export class BailianSttAdapter {
     if (signal?.aborted) return result("cancelled", "qwen3-asr-flash", started, { message: "转写已取消" });
     const invalidAudio = audioError(blob, this.maxBytes, "qwen3-asr-flash", started); if (invalidAudio) return invalidAudio;
     if (typeof this.bridge?.transcribeBailian !== "function") return result("pending", "qwen3-asr-flash", started, { message: "千问识别仅在 DeskMate 桌面版可用" });
+    const requestId = globalThis.crypto?.randomUUID?.() || `asr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const cancel = () => this.bridge?.cancelBailian?.(requestId);
+    signal?.addEventListener("abort", cancel, { once: true });
     try {
-      const response = await this.bridge.transcribeBailian({ audio: await blob.arrayBuffer(), mimeType: blob.type || "audio/webm" });
+      const response = await this.bridge.transcribeBailian({ requestId, audio: await blob.arrayBuffer(), mimeType: blob.type || "audio/webm" });
       if (signal?.aborted) return result("cancelled", "qwen3-asr-flash", started, { message: "转写已取消" });
       return result("success", "qwen3-asr-flash", started, { text: response.text, language: response.language, emotion: response.emotion, requestId: response.requestId });
-    } catch (error) { return result("error", "qwen3-asr-flash", started, { message: error.message || "千问 ASR 转写失败" }); }
+    } catch (error) { return signal?.aborted ? result("cancelled", "qwen3-asr-flash", started, { message: "转写已取消" }) : result("error", "qwen3-asr-flash", started, { message: error.message || "千问 ASR 转写失败" }); }
+    finally { signal?.removeEventListener("abort", cancel); }
   }
 }
 export class HttpSttAdapter {

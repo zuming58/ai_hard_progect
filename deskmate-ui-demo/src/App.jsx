@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   IconBell as Bell,
   IconBook as BookOpen,
@@ -61,7 +61,7 @@ function BrandMark() {
   return <span className="brand-mark"><MoodSmile size={23} stroke={1.8} /></span>;
 }
 
-function Sidebar({ current, navigate, collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
+function Sidebar({ current, navigate, collapsed, setCollapsed, mobileOpen, setMobileOpen, boardConnected }) {
   return (
     <aside className={`sidebar ${collapsed ? "is-collapsed" : ""} ${mobileOpen ? "is-mobile-open" : ""}`}>
       <div className="sidebar__brand">
@@ -89,8 +89,8 @@ function Sidebar({ current, navigate, collapsed, setCollapsed, mobileOpen, setMo
       <button className="sidebar__collapse" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "展开侧栏" : "收起侧栏"}>{collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}<span>收起导航</span></button>
       <div className="device-card">
         <div className="device-card__screen"><img src={DEVICE_FACE_URL} alt="DeskMate 设备" /></div>
-        <div className="device-card__status device-card__status--pending"><span />板子联动待接入</div>
-        <small>Windows 已识别 HID · App 桥待接入</small>
+        <div className={`device-card__status ${boardConnected ? "" : "device-card__status--pending"}`}><span />{boardConnected ? "EasyInput 已连接" : "等待 EasyInput 板子"}</div>
+        <small>{boardConnected ? "USB HID · F22 监听就绪" : "请通过 USB 连接开发板"}</small>
       </div>
     </aside>
   );
@@ -141,7 +141,10 @@ function AppContent() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [pendingVoiceEvent, setPendingVoiceEvent] = useState(null);
-  const { event, state } = useAppStore();
+  const lastBoardConnected = useRef(null);
+  const runtimeRef = useRef(null);
+  const { event, state, patch } = useAppStore();
+  runtimeRef.current = state.runtime;
   useEffect(() => mockAdapters.agentStatus.subscribe(event, { emitCurrent: false }), [event]);
   useEffect(() => {
     if (!window.desktopBridge) return undefined;
@@ -154,10 +157,17 @@ function AppContent() {
     }, 450);
     return () => { active = false; window.clearTimeout(timer); };
   }, [state.settings.voiceShortcut]);
+  useEffect(() => {
+    voiceAdapters.desktop.setTriggerConfig({ boardF22: state.settings.boardF22Enabled, rightAlt: state.settings.rightAltEnabled }).catch(() => {});
+  }, [state.settings.boardF22Enabled, state.settings.rightAltEnabled]);
   useEffect(() => voiceAdapters.desktop.onVoiceToggle((detail) => {
     window.location.hash = "/voice";
     setCurrent("voice");
-    setPendingVoiceEvent(createDeviceEvent("voice-toggle", "global-shortcut", { phase: detail.phase || null, shortcut: detail.shortcut || "" }, { at: detail.at }));
+    const source = detail.source || "global-shortcut";
+    setPendingVoiceEvent(createDeviceEvent("voice-toggle", source, { phase: detail.phase || null, shortcut: detail.shortcut || "" }, { at: detail.at }));
+  }), []);
+  useEffect(() => voiceAdapters.desktop.onVoiceCancel((detail) => {
+    deviceEventBus.publish(createDeviceEvent("voice-cancel", detail.source || "keyboard", {}, { at: detail.at }));
   }), []);
   useEffect(() => {
     if (current !== "voice" || !pendingVoiceEvent) return undefined;
@@ -168,8 +178,25 @@ function AppContent() {
     return () => window.clearTimeout(timer);
   }, [current, pendingVoiceEvent]);
   useEffect(() => voiceAdapters.desktop.onKeyDiagnostic((detail) => {
-    const source = detail.source === "global-shortcut" ? "global-shortcut" : "desktop-input";
-    deviceEventBus.publish(createDeviceEvent("key-diagnostic", source, { key: detail.key || "", code: detail.code || "", control: Boolean(detail.control), shift: Boolean(detail.shift), alt: Boolean(detail.alt), meta: Boolean(detail.meta) }, { at: detail.at }));
+    const source = detail.source || "desktop-input";
+    deviceEventBus.publish(createDeviceEvent("key-diagnostic", source, { key: detail.key || "", action: detail.action || "", sequence: Number(detail.sequence) || null }, { at: detail.time || detail.at }));
+  }), []);
+  useEffect(() => {
+    const updateBridge = (inputBridge) => {
+      const runtime = runtimeRef.current || {};
+      patch({ runtime: { ...runtime, inputBridge: { ...(runtime.inputBridge || {}), ...inputBridge } } });
+      if (lastBoardConnected.current !== inputBridge.boardConnected) {
+        lastBoardConnected.current = inputBridge.boardConnected;
+        deviceEventBus.publish(createDeviceEvent("connection-change", "easyinput-hid", { connected: Boolean(inputBridge.boardConnected) }));
+      }
+    };
+    voiceAdapters.desktop.capabilities().then((value) => { if (value.inputBridge) updateBridge(value.inputBridge); }).catch(() => {});
+    return voiceAdapters.desktop.onInputBridgeStatus(updateBridge);
+  }, [patch]);
+  useEffect(() => voiceAdapters.desktop.onNavigate(({ route }) => {
+    if (!pages[route]) return;
+    window.location.hash = `/${route}`;
+    setCurrent(route);
   }), []);
   useEffect(() => {
     const onHash = () => setCurrent(resolveHash());
@@ -189,14 +216,14 @@ function AppContent() {
   const CurrentPage = pages[current] || DashboardPage;
   return (
     <div className={`app-shell ${collapsed ? "has-collapsed-sidebar" : ""}`}>
-      <Sidebar current={current} navigate={navigate} collapsed={collapsed} setCollapsed={setCollapsed} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+      <Sidebar current={current} navigate={navigate} collapsed={collapsed} setCollapsed={setCollapsed} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} boardConnected={Boolean(state.runtime?.inputBridge?.boardConnected)} />
       {mobileOpen && <button className="mobile-scrim" aria-label="关闭菜单" onClick={() => setMobileOpen(false)} />}
       <main className="app-main">
         <AppHeader current={current} setMobileOpen={setMobileOpen} />
         <div className="app-content"><CurrentPage navigate={navigate} notify={setToast} /></div>
       </main>
       {toast && <div className="toast"><CircleCheck size={18} />{toast}</div>}
-      <div className="demo-watermark"><Sparkles size={14} />软件 MVP · 板子联动待接入</div>
+      <div className="demo-watermark"><Sparkles size={14} />{state.runtime?.inputBridge?.boardConnected ? "EasyInput 真机桥已连接" : "软件核心已就绪 · 等待板子"}</div>
     </div>
   );
 }

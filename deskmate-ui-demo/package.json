@@ -11,9 +11,10 @@
   },
   "scripts": {
     "dev": "vite",
-    "dev:desktop": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron electron/main.cjs --dev\"",
+    "build:input-bridge": "dotnet publish native/DeskMate.InputBridge/DeskMate.InputBridge.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o native/DeskMate.InputBridge/publish",
+    "dev:desktop": "npm run build:input-bridge && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron electron/main.cjs --dev\"",
     "build": "vite build && node scripts/prepare-sites-build.mjs",
-    "build:desktop": "npm run build && electron-builder --win --dir",
+    "build:desktop": "npm run build:input-bridge && npm run build && electron-builder --win --dir",
     "preview": "vite preview",
     "test": "npm run build && node --test tests/*.test.mjs",
     "test:sites": "node --test tests/sites-worker.test.mjs"
@@ -35,6 +36,9 @@
     "appId": "com.deskmate.app",
     "productName": "DeskMate",
     "files": ["electron/**/*", "dist/client/**/*", "package.json"],
+    "extraResources": [
+      { "from": "native/DeskMate.InputBridge/publish", "to": "input-bridge", "filter": ["DeskMate.InputBridge.exe"] }
+    ],
     "directories": { "output": "release" },
     "win": { "target": "dir", "executableName": "DeskMate" }
   }

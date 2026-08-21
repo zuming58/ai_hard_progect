@@ -33,6 +33,13 @@ test("Bailian parses text and sends authorization only as a header", async () =>
   assert.equal(parseResponse({ choices: [{ message: { content: " 文本 " } }] }).text, "文本");
 });
 
+test("Bailian request can be cancelled by the voice session", async () => {
+  const controller = new AbortController();
+  const pending = transcribe({ apiKey: "sk-12345678", audio: Buffer.from("audio"), signal: controller.signal, fetchImpl: (_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true })) });
+  controller.abort();
+  await assert.rejects(pending, /已取消/);
+});
+
 test("Bailian credentials are encrypted at rest and status never returns the key", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "deskmate-bailian-"));
   const safeStorage = { isEncryptionAvailable: () => true, encryptString: (value) => Buffer.from(`encrypted:${value}`), decryptString: (value) => value.toString().replace(/^encrypted:/, "") };
