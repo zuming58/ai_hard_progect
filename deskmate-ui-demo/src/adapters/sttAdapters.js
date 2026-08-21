@@ -11,6 +11,20 @@ export function validateSttEndpoint(value) {
   return endpoint;
 }
 export class MockSttAdapter { constructor(text = "这是设备模拟器生成的测试转写。", { maxBytes = DEFAULT_MAX_BYTES } = {}) { this.text = text; this.maxBytes = maxBytes; } async transcribe(blob, { signal } = {}) { const started = Date.now(); if (signal?.aborted) return result("cancelled", "mock", started, { message: "转写已取消" }); return audioError(blob, this.maxBytes, "mock", started) || result("success", "mock", started, { text: this.text }); } }
+export class BailianSttAdapter {
+  constructor({ bridge = globalThis.desktopBridge, maxBytes = 10 * 1024 * 1024 } = {}) { this.bridge = bridge; this.maxBytes = maxBytes; }
+  async transcribe(blob, { signal } = {}) {
+    const started = Date.now();
+    if (signal?.aborted) return result("cancelled", "qwen3-asr-flash", started, { message: "转写已取消" });
+    const invalidAudio = audioError(blob, this.maxBytes, "qwen3-asr-flash", started); if (invalidAudio) return invalidAudio;
+    if (typeof this.bridge?.transcribeBailian !== "function") return result("pending", "qwen3-asr-flash", started, { message: "千问识别仅在 DeskMate 桌面版可用" });
+    try {
+      const response = await this.bridge.transcribeBailian({ audio: await blob.arrayBuffer(), mimeType: blob.type || "audio/webm" });
+      if (signal?.aborted) return result("cancelled", "qwen3-asr-flash", started, { message: "转写已取消" });
+      return result("success", "qwen3-asr-flash", started, { text: response.text, language: response.language, emotion: response.emotion, requestId: response.requestId });
+    } catch (error) { return result("error", "qwen3-asr-flash", started, { message: error.message || "千问 ASR 转写失败" }); }
+  }
+}
 export class HttpSttAdapter {
   constructor({ endpoint = "", provider = "http", timeoutMs = 15000, maxBytes = DEFAULT_MAX_BYTES, fetchImpl = globalThis.fetch } = {}) { Object.assign(this, { endpoint, provider, timeoutMs, maxBytes, fetchImpl }); }
   async transcribe(blob, { signal } = {}) {
