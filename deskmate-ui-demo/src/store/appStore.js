@@ -3,14 +3,14 @@ import { expressionPresets, historyItems, keyActions } from "../appData.js";
 import { AI_EVENT_TYPES } from "../adapters/index.js";
 
 export const STORAGE_KEY = "deskmate.app-state";
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const defaultState = {
   schemaVersion: SCHEMA_VERSION,
   history: historyItems,
   vocabulary: { hotwords: ["DeskMate", "ESP32-S3", "Codex", "Claude Code", "Hermes"], rules: [{ from: "桌面宠物", to: "桌宠" }, { from: "克劳德代码", to: "Claude Code" }] },
   keymap: [...keyActions.slice(0, 8)],
-  settings: { microphoneId: "", microphoneSource: "computer", formatting: "smart", theme: "system", floating: true, backgroundOpacity: 70, operation: "toggle", startupSound: true, voiceShortcut: "Ctrl+Shift+Space", outputMode: "history", activeWindowOutputEnabled: false, keyDiagnosticsEnabled: false },
+  settings: { microphoneId: "", microphoneSource: "computer", formatting: "smart", customOrganizerRule: "", theme: "system", floating: true, backgroundOpacity: 70, operation: "toggle", startupSound: true, voiceShortcut: "Ctrl+Shift+Space", outputMode: "history", activeWindowOutputEnabled: false, keyDiagnosticsEnabled: false, simulatorEnabled: false, sttMode: "unconfigured", sttEndpoint: "" },
   expressionMapping: { idle: "sleep", listening: "listen", thinking: "think", working: "focus", waiting_user: "listen", completed: "happy", error: "alert" },
   agentExpressionMapping: { codex: "focus", claude: "listen", hermes: "think", workbody: "happy" },
   currentExpression: "focus",
@@ -50,6 +50,12 @@ export function loadState(storage = globalThis.localStorage) {
   }
 }
 
+export function serializeConfig(state) {
+  const safe = structuredClone(state);
+  if (safe.settings) safe.settings.sttEndpoint = "";
+  return JSON.stringify(safe, null, 2);
+}
+
 export function validateConfig(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("配置必须是 JSON 对象");
   if (value.schemaVersion !== undefined && (!Number.isInteger(value.schemaVersion) || value.schemaVersion < 0)) throw new Error("schemaVersion 必须是非负整数数字");
@@ -64,6 +70,10 @@ export function validateConfig(value) {
   if (value.settings?.outputMode !== undefined && !["history", "clipboard"].includes(value.settings.outputMode)) throw new Error("文字输出方式无效");
   if (value.settings?.activeWindowOutputEnabled !== undefined && typeof value.settings.activeWindowOutputEnabled !== "boolean") throw new Error("当前窗口输出设置无效");
   if (value.settings?.keyDiagnosticsEnabled !== undefined && typeof value.settings.keyDiagnosticsEnabled !== "boolean") throw new Error("按键诊断设置无效");
+  if (value.settings?.simulatorEnabled !== undefined && typeof value.settings.simulatorEnabled !== "boolean") throw new Error("模拟器设置无效");
+  if (value.settings?.sttMode !== undefined && !["unconfigured", "mock", "http"].includes(value.settings.sttMode)) throw new Error("STT 模式无效");
+  if (value.settings?.sttEndpoint !== undefined && (typeof value.settings.sttEndpoint !== "string" || value.settings.sttEndpoint.length > 2048)) throw new Error("STT 端点格式无效");
+  if (value.settings?.customOrganizerRule !== undefined && (typeof value.settings.customOrganizerRule !== "string" || value.settings.customOrganizerRule.length > 4000)) throw new Error("自定义整理规则格式无效");
   const expressionIds = new Set(expressionPresets.map((item) => item.id));
   const checkExpressionMap = (mapping, label) => {
     if (mapping === undefined) return;
@@ -112,7 +122,7 @@ export function AppStoreProvider({ children }) {
     return validated;
   }, []);
   const event = useCallback((value) => dispatch({ type: "event", value }), []);
-  const exportConfig = useCallback(() => JSON.stringify(state, null, 2), [state]);
+  const exportConfig = useCallback(() => serializeConfig(state), [state]);
   const api = useMemo(() => ({ state, patch, reset, replace, event, exportConfig }), [state, patch, reset, replace, event, exportConfig]);
   return createElement(AppStoreContext.Provider, { value: api }, children);
 }

@@ -1,6 +1,14 @@
 export class SttAdapter {
-  async transcribe() { return { status: "pending", text: "", message: "录音完成，等待转写服务" }; }
+  constructor({ maxBytes = 15 * 1024 * 1024 } = {}) { this.maxBytes = maxBytes; }
+  async transcribe(blob, { signal } = {}) {
+    const started = Date.now();
+    if (signal?.aborted) return { status: "cancelled", text: "", provider: "unconfigured", durationMs: Date.now() - started, message: "转写已取消" };
+    if (blob instanceof Blob && blob.size > this.maxBytes) return { status: "error", text: "", provider: "unconfigured", durationMs: Date.now() - started, message: `录音文件超过 ${Math.floor(this.maxBytes / 1024 / 1024)}MB 限制` };
+    return { status: "pending", text: "", provider: "unconfigured", durationMs: Date.now() - started, message: "录音完成，等待转写服务" };
+  }
 }
+
+export { MockSttAdapter, HttpSttAdapter, ConfigurableTextOrganizer } from "./sttAdapters.js";
 
 export class TextOrganizerAdapter {
   async organize(text) { return String(text || ""); }
@@ -34,6 +42,7 @@ export class DesktopBridgeAdapter {
   async registerShortcut(shortcut) { return this.bridge?.registerShortcut ? this.bridge.registerShortcut(shortcut) : { registered: false, shortcut, reason: "desktop-bridge-unavailable" }; }
   async setVoiceRecording(recording) { return this.bridge?.setVoiceRecording ? this.bridge.setVoiceRecording(recording) : { ok: false, reason: "desktop-bridge-unavailable" }; }
   onVoiceToggle(listener) { return this.bridge?.onVoiceToggle ? this.bridge.onVoiceToggle(listener) : () => {}; }
+  onKeyDiagnostic(listener) { return this.bridge?.onKeyDiagnostic ? this.bridge.onKeyDiagnostic(listener) : () => {}; }
 }
 
 export const voiceAdapters = { stt: new SttAdapter(), organizer: new TextOrganizerAdapter(), output: new TextOutputAdapter(), lanAudio: new EasyInputLanAudioAdapter(), desktop: new DesktopBridgeAdapter() };
