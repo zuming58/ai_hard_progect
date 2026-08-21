@@ -8,6 +8,10 @@
 - [新窗口交接](资料备份与知识库/00-新窗口交接-训练营与桌宠毕业设计.md)
 - [参考仓库](参考仓库/README.md)
 - [项目设计产物](项目设计/README.md)
+- [Phase 3B 语音产品化状态](docs/PHASE3B_PRODUCTIZATION_STATUS.md)
+- [2026-08-22 主交接文档](docs/MASTER_HANDOFF_2026-08-22.md)
+- [另一台电脑 Phase 3C 无硬件任务书](docs/OTHER_PC_PHASE3C_CODE_FIRST_TASK.md)
+- [可复制给另一台 Codex 的 Phase 3C 指令](docs/OTHER_PC_PHASE3C_COPY_PROMPT.md)
 
 ## 目录约定
 

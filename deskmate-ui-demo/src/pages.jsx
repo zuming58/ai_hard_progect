@@ -48,7 +48,7 @@ import { useRecorder } from "./hooks/useRecorder.js";
 import { clearRecordingBlobs, deleteRecordingBlob, getRecordingBlob, saveRecordingBlob } from "./store/recordingStore.js";
 import { mockAdapters } from "./adapters/index.js";
 import { voiceAdapters } from "./adapters/voiceAdapters.js";
-import { BailianSttAdapter, ConfigurableTextOrganizer, HttpSttAdapter, MockSttAdapter } from "./adapters/sttAdapters.js";
+import { BailianSttAdapter, BailianTextOrganizer, ConfigurableTextOrganizer, HttpSttAdapter, MockSttAdapter } from "./adapters/sttAdapters.js";
 import { DeviceSimulator } from "./adapters/deviceSimulator.js";
 import { deviceEventBus } from "./domain/deviceEvents.js";
 import { initialVoiceSession, voiceSessionReducer } from "./domain/voiceSession.js";
@@ -184,17 +184,39 @@ export function VoicePage({ notify }) {
         notify(`录音已完成，但音频无法持久保存：${cause.message}`);
       }
     }
-    const stt = state.settings.sttMode === "mock" && state.settings.simulatorEnabled ? new MockSttAdapter() : state.settings.sttMode === "bailian" ? new BailianSttAdapter() : state.settings.sttMode === "http" ? new HttpSttAdapter({ endpoint: state.settings.sttEndpoint }) : voiceAdapters.stt;
+    const stt = state.settings.sttMode === "mock" ? new MockSttAdapter() : state.settings.sttMode === "bailian" ? new BailianSttAdapter() : state.settings.sttMode === "http" ? new HttpSttAdapter({ endpoint: state.settings.sttEndpoint }) : voiceAdapters.stt;
     setRecordingItem({ ...item, id, audioId });
     const controller = new AbortController(); sttAbortRef.current = controller; setProcessing(true);
     const mode = state.settings.activeWindowOutputEnabled ? "active-window" : state.settings.outputMode;
     try {
-      const processed = await processVoiceRecording({ blob: item.blob, stt, organizer: new ConfigurableTextOrganizer(), organizerOptions: { mode: state.settings.formatting, rules: state.vocabulary.rules, customRule: state.settings.customOrganizerRule }, signal: controller.signal, output: voiceAdapters.output, outputMode: mode, onPhase: (phase) => { if (phase === "outputting") dispatchSession({ type: "transition", state: "outputting", detail: { message: "正在写入目标窗口" } }); }, saveHistory: async ({ text, transcript: result }) => { const entry = { id, audioId, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), date: "今天", duration: `${item.duration} 秒`, count: result.status === "success" ? `${text.length} 字` : "待转写", text }; patch({ history: [entry, ...state.history], diagnostics: { ...(state.diagnostics || {}), stt: { provider: result.provider, status: result.status, durationMs: result.durationMs, errorType: result.status === "error" ? result.message : "" } } }); return entry; } });
+      const processed = await processVoiceRecording({
+        blob: item.blob,
+        stt,
+        organizer: new ConfigurableTextOrganizer({ smartOrganizer: new BailianTextOrganizer() }),
+        organizerOptions: { mode: state.settings.formatting, rules: state.vocabulary.rules, hotwords: state.vocabulary.hotwords, customRule: state.settings.customOrganizerRule },
+        signal: controller.signal,
+        output: voiceAdapters.output,
+        outputMode: mode,
+        onPhase: (phase) => {
+          if (phase === "organizing") dispatchSession({ type: "transition", state: "organizing", detail: { message: "正在使用千问整理文字" } });
+          if (phase === "outputting") dispatchSession({ type: "transition", state: "outputting", detail: { message: "正在写入目标窗口" } });
+        },
+        saveHistory: async ({ text, transcript: result, organized }) => {
+          const organizer = organized ? { mode: organized.mode || "raw", model: organized.model || "unknown", durationMs: Number(organized.durationMs) || 0, status: organized.status || (organized.fallback ? "fallback" : "success"), fallback: Boolean(organized.fallback), errorType: organized.errorType || "" } : { mode: "raw", model: "none", durationMs: 0, status: "skipped", fallback: false };
+          const entry = { id, audioId, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), date: "今天", duration: `${item.duration} 秒`, count: result.status === "success" ? `${text.length} 字` : "待转写", rawText: result.text || "", text, organizer };
+          patch({ history: [entry, ...state.history], diagnostics: { ...(state.diagnostics || {}), stt: { provider: result.provider, status: result.status, durationMs: result.durationMs, errorType: result.status === "error" ? result.message : "" }, organizer } });
+          return entry;
+        },
+      });
       setTranscript(processed.text);
-      if (processed.transcript.status === "success") {
+      if (processed.organized?.status === "cancelled") {
+        dispatchSession({ type: "reset" });
+        notify("文字整理已取消，原始转写仍保存在历史中");
+      } else if (processed.transcript.status === "success") {
         if (processed.output.ok) {
-          dispatchSession({ type: "transition", state: "completed", detail: { message: processed.output.fallbackFrom ? "目标窗口已变化，文字已复制到剪贴板" : "转写和文字输出均已完成" } });
-          notify(processed.output.fallbackFrom ? "目标窗口已变化，转写已保存并复制到剪贴板" : `转写完成，已输出到${processed.output.mode === "history" ? "历史" : processed.output.mode === "clipboard" ? "剪贴板" : "当前窗口"}`);
+          const organizerFallback = processed.organized?.fallback;
+          dispatchSession({ type: "transition", state: "completed", detail: { message: processed.output.fallbackFrom ? "目标窗口已变化，文字已复制到剪贴板" : organizerFallback ? "智能整理不可用，已安全输出原文" : "转写、整理和文字输出均已完成" } });
+          notify(processed.output.fallbackFrom ? "目标窗口已变化，转写已保存并复制到剪贴板" : organizerFallback ? "智能整理不可用，已保留并输出原始转写" : `转写完成，已输出到${processed.output.mode === "history" ? "历史" : processed.output.mode === "clipboard" ? "剪贴板" : "当前窗口"}`);
         } else {
           dispatchSession({ type: "transition", state: "error", detail: { message: "转写已保存，但文字输出失败" } });
           notify("转写已保存到历史，但文字输出失败");
@@ -213,7 +235,7 @@ export function VoicePage({ notify }) {
       sttAbortRef.current = null;
       setProcessing(false);
     }
-  }, [notify, patch, state.history, state.settings]);
+  }, [notify, patch, state.history, state.settings, state.vocabulary]);
   const appendRealtimeAudio = useCallback((audio) => {
     const sessionId = realtimeSessionRef.current;
     if (!sessionId) {
@@ -223,7 +245,7 @@ export function VoicePage({ notify }) {
     if (typeof globalThis.desktopBridge?.appendBailianRealtime !== "function") return;
     globalThis.desktopBridge.appendBailianRealtime({ sessionId, audio }).catch(() => {});
   }, []);
-  const { status, seconds, level, error, stop, toggle, cancel } = useRecorder({ deviceId: source || undefined, onComplete: handleComplete, onAudioChunk: appendRealtimeAudio, onError: (message) => { dispatchSession({ type: "transition", state: "error", detail: { message } }); notify(message); } });
+  const { status, seconds, level, error, start, stop, toggle, cancel } = useRecorder({ deviceId: source || undefined, onComplete: handleComplete, onAudioChunk: appendRealtimeAudio, onError: (message) => { dispatchSession({ type: "transition", state: "error", detail: { message } }); notify(message); } });
   const recording = status === "recording";
   const processingRef = useRef(processing); processingRef.current = processing;
   const beginRealtimePreview = () => {
@@ -255,15 +277,18 @@ export function VoicePage({ notify }) {
     realtimeAttemptRef.current += 1;
     pendingRealtimeAudioRef.current = [];
   };
-  toggleRef.current = async () => {
+  toggleRef.current = async (requestedPhase) => {
     if (processingRef.current) return { ignored: true, reason: "processing" };
-    const starting = status !== "recording";
+    const phase = typeof requestedPhase === "string" && ["start", "stop"].includes(requestedPhase) ? requestedPhase : null;
+    if (phase === "start" && status === "recording") return { ignored: true, reason: "already-recording" };
+    if (phase === "stop" && status !== "recording") return { ignored: true, reason: "not-recording" };
+    const starting = phase ? phase === "start" : status !== "recording";
     if (starting) {
       setLiveTranscript("");
       dispatchSession({ type: "transition", state: "recording", detail: { message: "正在使用电脑麦克风录音" } });
       beginRealtimePreview();
     }
-    const result = await toggle();
+    const result = phase === "start" ? { ignored: false, action: "start", started: await start() } : phase === "stop" ? (stop(), { ignored: false, action: "stop" }) : await toggle();
     if (result.action === "start" && !result.started) {
       invalidateRealtimeStart();
       if (realtimeSessionRef.current) globalThis.desktopBridge?.cancelBailianRealtime?.(realtimeSessionRef.current).catch(() => {});
@@ -299,7 +324,7 @@ export function VoicePage({ notify }) {
     else if (event.kind === "ready") setRealtimeStatus("ready");
     else if (["finished", "closed"].includes(event.kind)) setRealtimeStatus("finished");
   }), []);
-  useEffect(() => deviceEventBus.subscribe((event) => { setLastDeviceEvent(event); if (event.type === "voice-toggle") toggleRef.current(); if (event.type === "voice-cancel") cancelRef.current(); if (event.type === "connection-change" && !event.payload.connected && recordingRef.current) { stop(); notify("EasyInput 已断线，当前录音已安全停止并保留"); } }), [notify, stop]);
+  useEffect(() => deviceEventBus.subscribe((event) => { setLastDeviceEvent(event); if (event.type === "voice-toggle") toggleRef.current(event.payload.phase); if (event.type === "voice-cancel") cancelRef.current(); if (event.type === "connection-change" && !event.payload.connected && recordingRef.current) { stop(); notify("EasyInput 已断线，当前录音已安全停止并保留"); } }), [notify, stop]);
   useEffect(() => { voiceAdapters.desktop.setVoiceRecording(recording).catch(() => {}); }, [recording]);
   useEffect(() => {
     voiceAdapters.desktop.setVoiceState({ state: session.state, message: session.message, transcript: session.state === "recording" ? liveTranscript : "", seconds, level, floating: state.settings.floating }).catch(() => {});
@@ -318,6 +343,7 @@ export function VoicePage({ notify }) {
   }, []);
   useEffect(() => { if (source && devices.length && !devices.some((device) => device.deviceId === source)) { setSource(""); patch({ settings: { ...state.settings, microphoneId: "" } }); notify("所选麦克风已拔出，已切换为系统默认设备"); } }, [devices, source]);
   const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  const processingLabel = session.state === "organizing" ? "正在整理…" : session.state === "outputting" ? "正在输入…" : "正在转写…";
   return (
     <div className="page">
       <PageIntro title="语音输入" description="专注录音、实时转写与智能整理" actions={<StatusBadge tone={desktopCaps.shortcutRegistered ? "success" : "demo"}>{desktopCaps.shortcutRegistered ? `桌面快捷键 · ${desktopCaps.shortcut}` : "Web 模式 · 全局快捷键不可用"}</StatusBadge>} />
@@ -331,7 +357,7 @@ export function VoicePage({ notify }) {
           </div>
         </div>
           <div className={`recorder ${recording ? "is-recording" : ""}`}>
-          <div className="recorder__state"><span className="pulse-dot" />{recording ? "正在录音…" : processing ? "正在转写…" : transcript ? "录音完成" : "准备就绪"}</div>
+          <div className="recorder__state"><span className="pulse-dot" />{recording ? "正在录音…" : processing ? processingLabel : transcript ? "录音完成" : "准备就绪"}</div>
           <div className="waveform" aria-label="录音声波">
             {Array.from({ length: 42 }).map((_, index) => <span key={index} style={{ "--height": `${recording ? Math.max(8, level * (0.35 + ((index % 5) / 10))) : 8 + ((index * 7) % 14)}px`, "--delay": `${index * -0.04}s` }} />)}
           </div>
@@ -339,14 +365,14 @@ export function VoicePage({ notify }) {
           <p className="recorder__transcript">{recording ? (liveTranscript || (realtimeStatus === "unavailable" ? "正在采集音频；录音结束后显示完整文字" : level > 2 ? "已检测到声音，正在实时识别…" : "等待你开始说话…")) : transcript || "按下按钮或使用快捷键开始录音"}</p>
           <Button icon={recording ? PlayerPause : Microphone2} variant={recording ? "danger" : "primary"} onClick={toggleRef.current} disabled={processing}>{recording ? "停止录音" : "开始录音"}</Button>
           {recording && <Button variant="ghost" onClick={cancelRef.current}>取消</Button>}
-          {processing && <Button variant="ghost" onClick={cancelRef.current}>取消转写</Button>}
+          {processing && <Button variant="ghost" onClick={cancelRef.current}>取消处理</Button>}
           {recordingUrl && <audio controls src={recordingUrl} />}
           {error && <Notice tone="warning" title="麦克风不可用">{error}</Notice>}
         </div>
-      <div className="voice-statusbar"><span>状态 · {recording ? "正在录音" : processing ? "正在转写" : status === "error" ? "不可用" : status === "completed" ? "录音完成" : "准备就绪"}</span><span>音量 · {level}%</span><span>悬浮窗 · {state.settings.floating ? "已开启" : "已关闭"}</span></div>
+      <div className="voice-statusbar"><span>状态 · {recording ? "正在录音" : processing ? processingLabel.replace("…", "") : status === "error" ? "不可用" : status === "completed" ? "录音完成" : "准备就绪"}</span><span>音量 · {level}%</span><span>悬浮窗 · {state.settings.floating ? "已开启" : "已关闭"}</span></div>
       </Card>
       <div className="two-column compact-panels">
-        <Card><SectionTitle index="02" title="输出方式" /><SettingRow title="文字整理" description={state.settings.formatting === "raw" ? "当前使用原样输出；智能整理将在 Phase 3B 接入" : "整理服务尚未接入，当前会安全退回原样输出"}><StatusBadge tone={state.settings.formatting === "raw" ? "success" : "demo"}>{state.settings.formatting === "raw" ? "原样输出" : "待接入"}</StatusBadge></SettingRow></Card>
+        <Card><SectionTitle index="02" title="输出方式" /><SettingRow title="文字整理" description={state.settings.formatting === "raw" ? "保留转写原意，仅应用确定性词库规则" : state.settings.formatting === "smart" ? "千问清理口头语、重复表达和标点" : "千问按你的要求整理，失败时保留原文"}><StatusBadge tone="success">{state.settings.formatting === "raw" ? "原样输出" : state.settings.formatting === "smart" ? "智能整理" : "自定义"}</StatusBadge></SettingRow></Card>
         <Card><SectionTitle index="03" title="录音设备" /><SettingRow title={source ? (devices.find((device) => device.deviceId === source)?.label || "已选择麦克风") : "系统默认麦克风"} description="录音过程中不会自动切换"><StatusBadge tone="success">可用</StatusBadge></SettingRow></Card>
       </div>
     </div>
@@ -358,9 +384,10 @@ export function HistoryPage({ notify }) {
   const [query, setQuery] = useState("");
   const [audioUrl, setAudioUrl] = useState("");
   const [activeAudioId, setActiveAudioId] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
   const items = state.history;
   const setItems = (next) => patch({ history: typeof next === "function" ? next(state.history) : next });
-  const filtered = items.filter((item) => item.text.includes(query) || item.time.includes(query));
+  const filtered = items.filter((item) => item.text.includes(query) || item.rawText?.includes(query) || item.time.includes(query));
   const copy = async (text) => { try { await navigator.clipboard.writeText(text); } catch { /* demo fallback */ } notify("内容已复制"); };
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
   const playRecording = async (item) => {
@@ -388,7 +415,20 @@ export function HistoryPage({ notify }) {
       <Card>
         <div className="list-toolbar"><div><strong>最近记录</strong><small>共 {items.length} 条本地记录</small></div><SearchField value={query} onChange={setQuery} placeholder="搜索文字或时间" /></div>
         {audioUrl && <div className="history-player"><strong>正在试听本地录音</strong><audio controls autoPlay src={audioUrl} /><Button variant="ghost" onClick={() => { setAudioUrl(""); setActiveAudioId(null); }}>关闭</Button></div>}
-        {filtered.length ? <div className="history-list">{filtered.map((item) => <article className="history-item" key={item.id}><time>{item.time}</time><div><p>{item.text}</p><small>{item.date} · {item.duration} · {item.count}</small></div><div className="row-actions">{item.audioId && <IconButton icon={PlayerPlay} label="试听" onClick={() => playRecording(item)} />}<IconButton icon={Copy} label="复制" onClick={() => copy(item.text)} /><IconButton icon={Trash} label="删除" onClick={() => removeItem(item)} /></div></article>)}</div> : <EmptyState icon={History} title="没有找到记录" description="更换搜索词，或者开始一次新的语音输入。" />}
+        {filtered.length ? <div className="history-list">{filtered.map((item) => {
+          const hasOriginal = Boolean(item.rawText && item.rawText !== item.text);
+          const organizerLabel = item.organizer?.fallback ? "已保留原文" : item.organizer?.mode === "smart" ? "智能整理" : item.organizer?.mode === "custom" ? "自定义整理" : "原样输出";
+          return <article className="history-item" key={item.id}>
+            <time>{item.time}</time>
+            <div className="history-copy">
+              <div className="history-badges"><StatusBadge tone={item.organizer?.fallback ? "demo" : "success"}>{organizerLabel}</StatusBadge>{item.organizer?.durationMs > 0 && <span>{item.organizer.durationMs} ms</span>}</div>
+              <p>{item.text}</p>
+              <small>{item.date} · {item.duration} · {item.count}</small>
+              {hasOriginal && expandedId === item.id && <div className="history-original"><div><strong>原始转写</strong><Button variant="ghost" icon={Copy} onClick={() => copy(item.rawText)}>复制原文</Button></div><p>{item.rawText}</p></div>}
+            </div>
+            <div className="row-actions">{hasOriginal && <Button variant="ghost" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>{expandedId === item.id ? "收起" : "原文"}</Button>}{item.audioId && <IconButton icon={PlayerPlay} label="试听" onClick={() => playRecording(item)} />}<IconButton icon={Copy} label="复制整理结果" onClick={() => copy(item.text)} /><IconButton icon={Trash} label="删除" onClick={() => removeItem(item)} /></div>
+          </article>;
+        })}</div> : <EmptyState icon={History} title="没有找到记录" description="更换搜索词，或者开始一次新的语音输入。" />}
       </Card>
     </div>
   );
@@ -621,12 +661,13 @@ export function SettingsPage({ notify }) {
   useEffect(() => { refreshBailianStatus(); }, [refreshBailianStatus]);
   const saveBailian = async () => { try { const value = await globalThis.desktopBridge?.saveBailianCredentials?.({ apiKey: bailianKey, workspaceId: bailianWorkspace }); if (!value) throw new Error("请在 DeskMate 桌面版中配置"); setBailianKey(""); setBailianStatus(value); updateSettings({ sttMode: "bailian", sttEndpoint: "" }); notify("千问语音识别账号已使用 Windows 加密保存"); } catch (error) { notify(`保存失败：${error.message}`); } };
   const clearBailian = async () => { try { const value = await globalThis.desktopBridge?.clearBailianCredentials?.(); if (!value) throw new Error("请在 DeskMate 桌面版中操作"); setBailianStatus(value); updateSettings({ sttMode: "unconfigured" }); notify("本机千问 API Key 已删除"); } catch (error) { notify(`删除失败：${error.message}`); } };
-  const exportDiagnostics = async () => { const caps = await voiceAdapters.desktop.capabilities(); let microphonePermission = "unknown"; try { microphonePermission = (await navigator.permissions.query({ name: "microphone" })).state; } catch { /* unsupported permission query */ } const report = createDiagnosticReport({ runtime: caps.supported ? "electron" : "web", shortcut: { value: state.settings.voiceShortcut, registered: Boolean(caps.shortcutRegistered) }, microphone: { selected: state.settings.microphoneId ? "custom-device" : "system-default", permission: microphonePermission }, deviceEvent: deviceEventBus.lastEvent ? { source: deviceEventBus.lastEvent.source, type: deviceEventBus.lastEvent.type, at: deviceEventBus.lastEvent.at } : null, stt: state.diagnostics?.stt || { status: state.settings.sttMode === "unconfigured" ? "unconfigured" : state.settings.sttMode } }); const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }); const link = document.createElement("a"); const url = URL.createObjectURL(blob); link.href = url; link.download = "deskmate-diagnostics.json"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0); notify("已导出脱敏诊断 JSON"); };
+  const exportDiagnostics = async () => { const caps = await voiceAdapters.desktop.capabilities(); let microphonePermission = "unknown"; try { microphonePermission = (await navigator.permissions.query({ name: "microphone" })).state; } catch { /* unsupported permission query */ } const report = createDiagnosticReport({ runtime: caps.supported ? "electron" : "web", shortcut: { value: state.settings.voiceShortcut, registered: Boolean(caps.shortcutRegistered) }, microphone: { selected: state.settings.microphoneId ? "custom-device" : "system-default", permission: microphonePermission }, deviceEvent: deviceEventBus.lastEvent ? { source: deviceEventBus.lastEvent.source, type: deviceEventBus.lastEvent.type, at: deviceEventBus.lastEvent.at } : null, stt: state.diagnostics?.stt || { status: state.settings.sttMode === "unconfigured" ? "unconfigured" : state.settings.sttMode }, organizer: state.diagnostics?.organizer ? { model: state.diagnostics.organizer.model, durationMs: state.diagnostics.organizer.durationMs, status: state.diagnostics.organizer.status, fallback: state.diagnostics.organizer.fallback, errorType: state.diagnostics.organizer.errorType || "" } : { model: "qwen3.7-flash", status: state.settings.formatting === "raw" ? "disabled" : "not-run" } }); const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }); const link = document.createElement("a"); const url = URL.createObjectURL(blob); link.href = url; link.download = "deskmate-diagnostics.json"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0); notify("已导出脱敏诊断 JSON"); };
   const downloadConfig = () => { const blob = new Blob([exportConfig()], { type: "application/json" }); const link = document.createElement("a"); const url = URL.createObjectURL(blob); link.href = url; link.download = "deskmate-config.json"; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0); notify("配置 JSON 已导出"); };
   const importConfig = (event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { replace(JSON.parse(reader.result)); notify("配置已导入"); } catch (error) { notify(`导入失败：${error.message}`); } }; reader.readAsText(file); event.target.value = ""; };
   const sttDiagnostic = state.settings.sttMode === "bailian" ? { label: "千问 ASR", value: bailianStatus.configured ? "已配置" : "缺少密钥", tone: bailianStatus.configured ? "success" : "demo" } : state.settings.sttMode === "mock" ? { label: "Mock STT", value: "模拟", tone: "demo" } : state.settings.sttMode === "http" ? { label: "HTTP STT 端点", value: "待验证", tone: "demo" } : { label: "语音转写服务", value: "未配置", tone: "demo" };
+  const organizerDiagnostic = state.settings.formatting === "raw" ? { label: "文字整理", value: "本地原样输出", tone: "success" } : { label: "千问文字整理", value: !bailianStatus.configured ? "缺少密钥" : state.diagnostics?.organizer?.fallback ? "上次已回退原文" : state.diagnostics?.organizer?.status === "success" ? `正常 · ${state.diagnostics.organizer.durationMs} ms` : "已配置", tone: bailianStatus.configured && !state.diagnostics?.organizer?.fallback ? "success" : "demo" };
   const inputBridge = state.runtime?.inputBridge || {};
-  const diagnosticItems = [{ label: "Windows 输入桥", value: inputBridge.process === "running" ? "运行中" : inputBridge.process || "未知", tone: inputBridge.process === "running" ? "success" : "demo" }, { label: "EasyInput HID", value: inputBridge.boardConnected ? "已连接" : "未连接", tone: inputBridge.boardConnected ? "success" : "demo" }, { label: "电脑麦克风录音", value: "可用", tone: "success" }, sttDiagnostic, { label: "文字输出", value: state.settings.activeWindowOutputEnabled ? "原窗口 + 剪贴板回退" : state.settings.outputMode === "clipboard" ? "剪贴板" : "历史", tone: "success" }, { label: "板载局域网音频", value: "协议未确认", tone: "demo" }];
+  const diagnosticItems = [{ label: "Windows 输入桥", value: inputBridge.process === "running" ? "运行中" : inputBridge.process || "未知", tone: inputBridge.process === "running" ? "success" : "demo" }, { label: "EasyInput HID", value: inputBridge.boardConnected ? "已连接" : "未连接", tone: inputBridge.boardConnected ? "success" : "demo" }, { label: "电脑麦克风录音", value: "可用", tone: "success" }, sttDiagnostic, organizerDiagnostic, { label: "文字输出", value: state.settings.activeWindowOutputEnabled ? "原窗口 + 剪贴板回退" : state.settings.outputMode === "clipboard" ? "剪贴板" : "历史", tone: "success" }, { label: "板载局域网音频", value: "协议未确认", tone: "demo" }];
   return (
     <div className="page">
       <PageIntro title="设置与诊断" description="管理快捷键、输入方式、外观和系统诊断" actions={<><Button icon={Upload} onClick={() => document.getElementById("config-import").click()}>导入配置</Button><input id="config-import" type="file" accept="application/json" hidden onChange={importConfig} /><Button icon={Download} onClick={downloadConfig}>导出配置</Button><Button icon={Refresh} onClick={() => { reset(); notify("设置已恢复为默认值"); }}>恢复默认</Button></>} />
@@ -634,9 +675,9 @@ export function SettingsPage({ notify }) {
         <Card className="settings-nav">{[{ id: "input", icon: Keyboard, label: "输入与快捷键" }, { id: "format", icon: Book2, label: "文字整理" }, { id: "appearance", icon: Sun, label: "外观与悬浮窗" }, { id: "account", icon: User, label: "账户" }, { id: "diagnostics", icon: Gauge, label: "系统诊断" }].map((item) => <button className={section === item.id ? "is-active" : ""} onClick={() => setSection(item.id)} key={item.id}><item.icon size={19} /><span>{item.label}</span><ArrowRight size={16} /></button>)}</Card>
         <Card className="settings-panel">
           {section === "input" && <><SectionTitle index="01" title="快捷键" /><SettingRow title="EasyInput F22 语音键" description="仅识别 VID 303A / PID 1006；在按键释放时切换录音，不拦截其他标准按键"><Toggle checked={state.settings.boardF22Enabled} onChange={(value) => updateSettings({ boardF22Enabled: value })} /></SettingRow><SettingRow title="备用语音快捷键" description="无效或冲突时保留原快捷键；默认 Ctrl+Shift+Space"><input value={state.settings.voiceShortcut} onChange={(event) => updateSettings({ voiceShortcut: event.target.value })} aria-label="全局语音快捷键" /></SettingRow><SettingRow title="右 Alt 触发" description="可兼容旧方案，但可能影响 AltGr 和正常输入，因此默认关闭"><Toggle checked={state.settings.rightAltEnabled} onChange={(value) => updateSettings({ rightAltEnabled: value })} /></SettingRow>{state.settings.rightAltEnabled && <Notice tone="warning" title="右 Alt 已启用">Raw Input 桥不会吞掉右 Alt；部分应用仍可能把它当作 AltGr。若输入异常，请关闭此选项。</Notice>}<SettingRow title="快捷键操作方式" description="按一下开始，再按一下结束；只在释放事件触发并带 350ms 防抖"><StatusBadge tone="success">切换模式</StatusBadge></SettingRow><SettingRow title="转写后文字输出" description="无论输出成功与否，都会先保存历史记录"><Segmented compact value={state.settings.outputMode} onChange={(value) => updateSettings({ outputMode: value })} options={[{ value: "history", label: "仅历史" }, { value: "clipboard", label: "复制" }]} /></SettingRow><SettingRow title="写入原输入窗口" description="目标窗口改变或自动输入失败时会回退到剪贴板"><Toggle checked={state.settings.activeWindowOutputEnabled} onChange={(value) => updateSettings({ activeWindowOutputEnabled: value })} /></SettingRow></>}
-          {section === "format" && <><SectionTitle index="02" title="文字整理" /><SettingRow title="整理方式" description="智能或自定义服务不可用时安全退回原样输出"><Segmented value={format} onChange={(value) => updateSettings({ formatting: value })} options={[{ value: "raw", label: "原样输出" }, { value: "smart", label: "智能整理" }, { value: "custom", label: "自定义" }]} /></SettingRow>{format === "custom" && <label className="field-label">本地自定义规则<input value={state.settings.customOrganizerRule} onChange={(event) => updateSettings({ customOrganizerRule: event.target.value })} placeholder="描述整理要求；为空时退回原样输出" /></label>}<SettingRow title="HTTP STT 端点" description="启用后录音会发送到该服务；仅允许 HTTPS，本机服务可使用 HTTP localhost；不要填写带 Token 的 URL"><input value={state.settings.sttEndpoint} onChange={(event) => updateSettings({ sttEndpoint: event.target.value, sttMode: event.target.value ? "http" : "unconfigured" })} placeholder="https://example.invalid/stt" /></SettingRow><Notice tone="success" title="当前规则">{format === "raw" ? "保留识别结果，只应用词库纠错。" : format === "smart" ? "整理服务未配置时自动保留原始转写。" : state.settings.customOrganizerRule ? "使用本地自定义规则；服务不可用时保留原始转写。" : "尚未填写自定义规则，将退回原样输出。"}</Notice></>}
+          {section === "format" && <><SectionTitle index="02" title="文字整理" /><SettingRow title="整理方式" description="智能或自定义服务不可用时安全退回原样输出"><Segmented value={format} onChange={(value) => updateSettings({ formatting: value })} options={[{ value: "raw", label: "原样输出" }, { value: "smart", label: "智能整理" }, { value: "custom", label: "自定义" }]} /></SettingRow>{format === "custom" && <label className="field-label">自定义整理要求<input value={state.settings.customOrganizerRule} maxLength={4000} onChange={(event) => updateSettings({ customOrganizerRule: event.target.value })} placeholder="例如：整理成简洁的任务清单；不得增加原文没有的信息" /></label>}<SettingRow title="HTTP STT 端点" description="启用后录音会发送到该服务；仅允许 HTTPS，本机服务可使用 HTTP localhost；不要填写带 Token 的 URL"><input value={state.settings.sttEndpoint} onChange={(event) => updateSettings({ sttEndpoint: event.target.value, sttMode: event.target.value ? "http" : "unconfigured" })} placeholder="https://example.invalid/stt" /></SettingRow><Notice tone={format === "raw" || bailianStatus.configured ? "success" : "warning"} title="当前规则">{format === "raw" ? "保留识别结果，只应用词库替换规则，不调用文字模型。" : !bailianStatus.configured ? "尚未配置百炼 API Key，将自动保留原始转写。" : format === "smart" ? "使用 qwen3.7-flash 清理口头语、重复和标点；失败时保留原文。" : state.settings.customOrganizerRule ? "先完成基础清理，再按自定义要求整理；失败时保留原文。" : "尚未填写自定义整理要求，将退回原样输出。"}</Notice></>}
           {section === "appearance" && <><SectionTitle index="03" title="外观与悬浮窗" /><SettingRow title="外观" description="跟随系统外观，或手动固定亮色 / 暗色"><Segmented value={theme} onChange={(value) => updateSettings({ theme: value })} options={[{ value: "system", label: "跟随系统" }, { value: "light", label: "亮色" }, { value: "dark", label: "暗色" }]} /></SettingRow><SettingRow title="悬浮窗显示" description="录音时显示状态和实时识别文字"><Toggle checked={floating} onChange={(value) => updateSettings({ floating: value })} /></SettingRow><SettingRow title="背景不透明度" description="数值越高，悬浮窗背景越实"><Slider label="背景不透明度" value={state.settings.backgroundOpacity} onChange={(value) => updateSettings({ backgroundOpacity: value })} /></SettingRow></>}
-          {section === "account" && <><SectionTitle index="04" title="千问语音识别" /><div className="account-card"><span className="avatar"><Lock size={28} /></span><div><strong>阿里云百炼 · qwen3-asr-flash</strong><p>API Key 只在 Electron 主进程中使用，并由 Windows 当前用户加密保存；不会进入配置导出或 Git。</p></div><StatusBadge tone={bailianStatus.configured ? "success" : "demo"}>{bailianStatus.configured ? "已配置" : "未配置"}</StatusBadge></div><label className="field-label">百炼 API Key<span className="secret-field"><input type={showBailianKey ? "text" : "password"} autoComplete="off" value={bailianKey} onChange={(event) => setBailianKey(event.target.value)} placeholder={bailianStatus.configured ? "已加密保存；输入新 Key 可替换" : "sk-..."} /><button type="button" aria-label={showBailianKey ? "隐藏 API Key" : "显示 API Key"} title={showBailianKey ? "隐藏 API Key" : "显示 API Key"} onClick={() => setShowBailianKey((value) => !value)}>{showBailianKey ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label><label className="field-label">业务空间 ID（可选）<input value={bailianWorkspace} onChange={(event) => setBailianWorkspace(event.target.value)} placeholder="留空使用百炼兼容域名" /></label><Notice tone="info" title="账号安全">只需要百炼 API Key，不需要阿里云登录密码、AccessKey ID 或 AccessKey Secret。录音停止后，WebM 音频会发送到百炼完成识别。</Notice><div className="button-row"><Button variant="primary" icon={DeviceFloppy} disabled={!bailianKey.trim()} onClick={saveBailian}>加密保存并启用</Button>{bailianStatus.configured && <Button variant="ghost" icon={Trash} onClick={clearBailian}>删除本机 Key</Button>}</div></>}
+          {section === "account" && <><SectionTitle index="04" title="千问服务" /><div className="account-card"><span className="avatar"><Lock size={28} /></span><div><strong>阿里云百炼 · ASR + 智能整理</strong><p>qwen3-asr-flash 负责转写，qwen3.7-flash 负责可选文字整理；共用同一份加密 API Key。</p></div><StatusBadge tone={bailianStatus.configured ? "success" : "demo"}>{bailianStatus.configured ? "已配置" : "未配置"}</StatusBadge></div><label className="field-label">百炼 API Key<span className="secret-field"><input type={showBailianKey ? "text" : "password"} autoComplete="off" value={bailianKey} onChange={(event) => setBailianKey(event.target.value)} placeholder={bailianStatus.configured ? "已加密保存；输入新 Key 可替换" : "sk-..."} /><button type="button" aria-label={showBailianKey ? "隐藏 API Key" : "显示 API Key"} title={showBailianKey ? "隐藏 API Key" : "显示 API Key"} onClick={() => setShowBailianKey((value) => !value)}>{showBailianKey ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label><label className="field-label">业务空间 ID（可选）<input value={bailianWorkspace} onChange={(event) => setBailianWorkspace(event.target.value)} placeholder="留空使用百炼兼容域名" /></label><Notice tone="info" title="账号安全">只需要百炼 API Key，不需要阿里云登录密码、AccessKey ID 或 AccessKey Secret。密钥只在 Electron 主进程中解密，不会进入配置导出或 Git。</Notice><div className="button-row"><Button variant="primary" icon={DeviceFloppy} disabled={!bailianKey.trim()} onClick={saveBailian}>加密保存并启用</Button>{bailianStatus.configured && <Button variant="ghost" icon={Trash} onClick={clearBailian}>删除本机 Key</Button>}</div></>}
           {section === "diagnostics" && <><SectionTitle index="05" title="系统诊断" /><div className="diagnostic-list">{diagnosticItems.map((item) => <div key={item.label}><span>{item.tone === "success" ? <Check size={18} /> : <AlertCircle size={18} />}</span><strong>{item.label}</strong><StatusBadge tone={item.tone}>{item.value}</StatusBadge></div>)}</div><Button icon={CloudDownload} onClick={exportDiagnostics}>导出脱敏诊断 JSON</Button></>}
         </Card>
       </div>

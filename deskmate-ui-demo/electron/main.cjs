@@ -6,15 +6,17 @@ const fs = require("fs");
 const { normalizeShortcut } = require("./shortcut.cjs");
 const { InputBridgeManager } = require("./input-bridge.cjs");
 const { transcribe: transcribeBailian } = require("./bailian.cjs");
+const { organize: organizeBailian } = require("./bailian-organizer.cjs");
 const { BailianRealtimeSession } = require("./bailian-realtime.cjs");
 const { createSecureBailianStore } = require("./secure-bailian.cjs");
 
 const DEFAULT_SHORTCUT = "Ctrl+Shift+Space";
 const DEFAULT_DEV_URL = "http://localhost:5173";
 const APP_ROOT = path.resolve(__dirname, "..", "dist", "client");
+const APP_ID = "com.deskmate.app";
 const FOREGROUND_SCRIPT = "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class DeskMateForeground { [DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); }'; [DeskMateForeground]::GetForegroundWindow().ToInt64()";
 const PASTE_SCRIPT = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')";
-const VOICE_STATES = new Set(["idle", "recording", "transcribing", "outputting", "completed", "error", "cancelled"]);
+const VOICE_STATES = new Set(["idle", "recording", "transcribing", "organizing", "outputting", "completed", "error", "cancelled"]);
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) app.quit();
 
@@ -32,9 +34,11 @@ let isQuitting = false;
 let lastVoiceState = { state: "idle", message: "准备就绪", transcript: "", seconds: 0, level: 0, floating: true };
 let lastVoiceToggleAt = 0;
 const activeBailianRequests = new Map();
+const activeBailianOrganizers = new Map();
 const activeRealtimeSessions = new Map();
 const smokeMode = process.argv.includes("--deskmate-smoke-test");
 const bailianTestAudio = process.argv.find((value) => value.startsWith("--bailian-test-audio="))?.slice("--bailian-test-audio=".length) || "";
+const bailianTestOrganizer = process.argv.find((value) => value.startsWith("--bailian-test-organizer="))?.slice("--bailian-test-organizer=".length) || "";
 let smokeStage = 0;
 
 if (smokeMode) {
@@ -51,8 +55,19 @@ function getInputBridgeExecutable() {
 }
 
 function trayIcon() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="#222c3a"/><rect x="6" y="8" width="20" height="16" rx="5" fill="#0e1622" stroke="#35c9ed"/><rect x="9" y="12" width="5" height="6" rx="2" fill="#35d7f4"/><rect x="18" y="12" width="5" height="6" rx="2" fill="#35d7f4"/><path d="M13 21h6" stroke="#35d7f4" stroke-width="1.5" stroke-linecap="round"/></svg>`;
-  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+  return loadAppIcon("tray-icon.ico", "tray-icon.png", "deskmate-icon.png");
+}
+
+function appAssetPath(name) {
+  return app.isPackaged ? path.join(process.resourcesPath, "app-assets", name) : path.join(__dirname, "assets", name);
+}
+
+function loadAppIcon(...candidates) {
+  for (const name of candidates) {
+    const image = nativeImage.createFromPath(appAssetPath(name));
+    if (!image.isEmpty()) return image;
+  }
+  throw new Error(`DeskMate 图标资源不可用：${candidates.join(", ")}`);
 }
 
 function getDevUrl() {
@@ -234,6 +249,7 @@ function refreshTrayMenu() {
 function createTray() {
   tray = new Tray(trayIcon());
   tray.setToolTip("DeskMate 语音输入");
+  tray.on("click", () => showMain());
   tray.on("double-click", () => showMain());
   refreshTrayMenu();
 }
@@ -244,6 +260,7 @@ function createWindow() {
     height: 1024,
     minWidth: 960,
     minHeight: 680,
+    icon: loadAppIcon("tray-icon.ico", "deskmate-icon.png"),
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), nodeIntegration: false, contextIsolation: true, sandbox: true },
   });
   if (process.argv.includes("--dev")) mainWindow.loadURL(getDevUrl());
@@ -280,7 +297,8 @@ function startInputBridge() {
 async function runSmokeTest() {
   if (!smokeMode || smokeStage !== 0) return;
   smokeStage = 1;
-  await mainWindow.webContents.executeJavaScript(`localStorage.setItem("deskmate.app-state", JSON.stringify({ schemaVersion: 4, settings: { keyDiagnosticsEnabled: true, simulatorEnabled: true, sttMode: "mock", outputMode: "clipboard", formatting: "raw" } })); location.hash = "/dashboard"; location.reload();`);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await mainWindow.webContents.executeJavaScript(`localStorage.setItem("deskmate.app-state", JSON.stringify({ schemaVersion: 5, settings: { keyDiagnosticsEnabled: true, simulatorEnabled: true, sttMode: "mock", outputMode: "clipboard", formatting: "raw" } })); location.hash = "/dashboard"; location.reload();`);
 }
 
 async function finishSmokeTest() {
@@ -291,7 +309,7 @@ async function finishSmokeTest() {
   await new Promise((resolve) => setTimeout(resolve, 1200));
   await emitVoiceToggle("smoke-test", shortcut);
   await new Promise((resolve) => setTimeout(resolve, 2800));
-  const report = await mainWindow.webContents.executeJavaScript(`(() => { const state = JSON.parse(localStorage.getItem("deskmate.app-state") || "{}"); return { historyText: state.history?.[0]?.text || "", route: location.hash }; })()`);
+  const report = await mainWindow.webContents.executeJavaScript(`(() => { const state = JSON.parse(localStorage.getItem("deskmate.app-state") || "{}"); return { historyText: state.history?.[0]?.text || "", route: location.hash, sttMode: state.settings?.sttMode || "missing", simulatorEnabled: Boolean(state.settings?.simulatorEnabled), sttStatus: state.diagnostics?.stt?.status || "missing", sttProvider: state.diagnostics?.stt?.provider || "missing" }; })()`);
   report.clipboardText = clipboard.readText();
   report.ok = Boolean(report.historyText && report.clipboardText === report.historyText && report.route === "#/voice");
   const resultPath = process.env.DESKMATE_SMOKE_RESULT;
@@ -314,9 +332,27 @@ async function runBailianConnectionTest(audioPath) {
   app.exit(report.ok ? 0 : 1);
 }
 
+async function runBailianOrganizerTest(text) {
+  const resultPath = process.env.DESKMATE_BAILIAN_ORGANIZER_TEST_RESULT;
+  const report = { ok: false, model: "qwen3.7-flash" };
+  try {
+    const source = String(text || "").trim().slice(0, 1000);
+    if (!source) throw new Error("测试文字不能为空");
+    const result = await organizeBailian({ ...bailianStore.loadSecret(), text: source, mode: "smart", model: "qwen3.7-flash" });
+    Object.assign(report, { ok: true, charactersIn: source.length, charactersOut: result.text.length, changed: result.text !== source, durationMs: result.durationMs, status: result.status });
+  } catch (error) {
+    const message = String(error?.message || error || "unknown-error").replace(/sk-[A-Za-z0-9_-]+/g, "[REDACTED]");
+    report.errorType = /超时|timeout/i.test(message) ? "timeout" : /API Key|密钥|配置/i.test(message) ? "configuration" : "request-failed";
+  }
+  if (resultPath && path.extname(resultPath).toLowerCase() === ".json") fs.writeFileSync(resultPath, JSON.stringify(report, null, 2));
+  app.exit(report.ok ? 0 : 1);
+}
+
 app.whenReady().then(async () => {
+  app.setAppUserModelId(APP_ID);
   bailianStore = createSecureBailianStore({ safeStorage, userDataPath: app.getPath("userData") });
   if (bailianTestAudio) { await runBailianConnectionTest(bailianTestAudio); return; }
+  if (bailianTestOrganizer) { await runBailianOrganizerTest(bailianTestOrganizer); return; }
   createWindow();
   createOverlayWindow();
   createTray();
@@ -342,6 +378,25 @@ app.whenReady().then(async () => {
     finally { activeBailianRequests.delete(requestId); }
   });
   handleTrusted("bailian:cancel", (requestId) => { const controller = activeBailianRequests.get(String(requestId || "")); if (!controller) return { ok: false, reason: "request-not-active" }; controller.abort(); return { ok: true }; });
+  handleTrusted("bailian:organize", async (value = {}) => {
+    const secret = bailianStore.loadSecret();
+    const requestId = typeof value.requestId === "string" && /^[a-zA-Z0-9-]{8,80}$/.test(value.requestId) ? value.requestId : `organizer-${Date.now()}`;
+    const controller = new AbortController();
+    activeBailianOrganizers.set(requestId, controller);
+    try {
+      return await organizeBailian({
+        ...secret,
+        model: "qwen3.7-flash",
+        text: value.text,
+        mode: value.mode,
+        hotwords: value.hotwords,
+        rules: value.rules,
+        customRule: value.customRule,
+        signal: controller.signal,
+      });
+    } finally { activeBailianOrganizers.delete(requestId); }
+  });
+  handleTrusted("bailian:cancel-organize", (requestId) => { const controller = activeBailianOrganizers.get(String(requestId || "")); if (!controller) return { ok: false, reason: "request-not-active" }; controller.abort(); return { ok: true }; });
   handleTrusted("bailian:realtime-start", async () => {
     const sessionId = `realtime-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const realtime = new BailianRealtimeSession({
@@ -374,6 +429,6 @@ app.whenReady().then(async () => {
   app.on("second-instance", () => showMain());
 });
 
-app.on("before-quit", () => { isQuitting = true; inputBridge?.stop(); activeBailianRequests.forEach((controller) => controller.abort()); activeBailianRequests.clear(); activeRealtimeSessions.forEach((realtime) => realtime.cancel()); activeRealtimeSessions.clear(); });
+app.on("before-quit", () => { isQuitting = true; inputBridge?.stop(); activeBailianRequests.forEach((controller) => controller.abort()); activeBailianRequests.clear(); activeBailianOrganizers.forEach((controller) => controller.abort()); activeBailianOrganizers.clear(); activeRealtimeSessions.forEach((realtime) => realtime.cancel()); activeRealtimeSessions.clear(); });
 app.on("will-quit", () => globalShortcut.unregisterAll());
 app.on("window-all-closed", () => { if (process.platform === "darwin" && !isQuitting) return; });

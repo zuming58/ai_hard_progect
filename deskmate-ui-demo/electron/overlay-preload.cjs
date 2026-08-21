@@ -12,6 +12,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const root = document.getElementById("root");
   const labels = {
     transcribing: "正在转写…",
+    organizing: "正在整理…",
     outputting: "正在输入…",
     completed: "语音输入完成",
     error: "语音输入失败",

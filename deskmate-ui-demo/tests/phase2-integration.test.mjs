@@ -50,11 +50,13 @@ test("HTTP STT requires encryption except for loopback development services", as
 });
 
 test("configuration exports never include the locally configured STT endpoint", () => {
-  const state = structuredClone(defaultState); state.settings.sttEndpoint = "https://private.example/stt"; state.settings.sttMode = "http";
+  const state = structuredClone(defaultState); state.settings.sttEndpoint = "https://private.example/stt"; state.settings.sttMode = "http"; state.history = [{ id: 1, time: "10:00", rawText: "secret raw", text: "secret final" }]; state.diagnostics = { organizer: { status: "success" } };
   const exported = serializeConfig(state);
-  assert.doesNotMatch(exported, /private\.example/);
+  assert.doesNotMatch(exported, /private\.example|secret raw|secret final/);
   assert.equal(JSON.parse(exported).settings.sttEndpoint, "");
   assert.equal(JSON.parse(exported).runtime, undefined);
+  assert.deepEqual(JSON.parse(exported).history, []);
+  assert.equal(JSON.parse(exported).diagnostics, undefined);
 });
 
 test("raw smart custom organizers degrade without losing transcription", async () => {
@@ -68,6 +70,23 @@ test("diagnostics export removes secrets and content", () => {
   const report = createDiagnosticReport({ schemaVersion: 99, generatedAt: "forged", token: "secret", wifiPassword: "secret", transcript: "spoken", localPath: "private", serialNumber: "serial-secret", windowTitle: "private-window", ipAddress: "192.168.1.4", runtime: "web", nested: { apiKey: "secret", status: "ok" } });
   const serialized = JSON.stringify(report); assert.doesNotMatch(serialized, /secret|spoken|private|192\.168/); assert.equal(report.nested.status, "ok"); assert.equal(report.lanAudio.status, "protocol-unconfirmed");
   assert.equal(report.schemaVersion, 1); assert.notEqual(report.generatedAt, "forged");
+});
+
+test("smart organizer returns structured metadata and uses pre-applied rules", async () => {
+  let received;
+  const organizer = new ConfigurableTextOrganizer({ smartOrganizer: { organize: async (text, options) => { received = { text, options }; return { text: "整理结果", model: "qwen3.7-flash", durationMs: 321, status: "success" }; } } });
+  const value = await organizer.organize("桌面宠物", { mode: "smart", hotwords: ["DeskMate"], rules: [{ from: "桌面宠物", to: "桌宠" }] });
+  assert.equal(received.text, "桌宠");
+  assert.equal(received.options.hotwords[0], "DeskMate");
+  assert.deepEqual(value, { text: "整理结果", model: "qwen3.7-flash", durationMs: 321, status: "success", mode: "smart", fallback: false });
+});
+
+test("organizer cancellation keeps the raw transcript and suppresses output", async () => {
+  const saved = []; let outputCalls = 0; const controller = new AbortController();
+  const response = await processVoiceRecording({ blob: new Blob(["audio"]), stt: new MockSttAdapter("原始转写"), organizer: { organize: async () => { controller.abort(); return { text: "原始转写", status: "cancelled", fallback: true }; } }, organizerOptions: { mode: "smart" }, signal: controller.signal, saveHistory: async (item) => { saved.push(item); return item; }, output: { output: async () => { outputCalls += 1; return { ok: true }; } } });
+  assert.equal(saved[0].text, "原始转写");
+  assert.equal(response.output.cancelled, true);
+  assert.equal(outputCalls, 0);
 });
 
 test("mock transcription is saved before clipboard failure", async () => {

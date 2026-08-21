@@ -14,10 +14,10 @@ export const pageMeta = {
 };
 
 export const historyItems = [
-  { id: 1, time: "16:55", date: "今天", duration: "31 秒", count: "192 字", text: "我们先把软件端的桌面工作台做好，再等待硬件固件和通信协议，之后把表情、动作以及环境传感器逐项接入。" },
-  { id: 2, time: "14:31", date: "今天", duration: "12 秒", count: "46 字", text: "把 Codex 的工作状态映射到桌宠表情，提取信息时显示专注，等待确认时显示倾听。" },
-  { id: 3, time: "11:08", date: "今天", duration: "19 秒", count: "83 字", text: "桌宠屏幕需要根据环境光自动调节亮度，同时保留手动亮度上限，夜间不能太刺眼。" },
-  { id: 4, time: "09:42", date: "昨天", duration: "8 秒", count: "31 字", text: "按键一设置为语音输入，按键二设置为回车，旋钮控制音量。" },
+  { id: 1, time: "16:55", date: "今天", duration: "31 秒", count: "192 字", text: "我们先把软件端的桌面工作台做好，再等待硬件固件和通信协议，之后把表情、动作以及环境传感器逐项接入。", rawText: "我们先把软件端的桌面工作台做好，再等待硬件固件和通信协议，之后把表情、动作以及环境传感器逐项接入。", organizer: { mode: "raw", model: "local-rules", durationMs: 0, status: "success", fallback: false } },
+  { id: 2, time: "14:31", date: "今天", duration: "12 秒", count: "46 字", text: "把 Codex 的工作状态映射到桌宠表情，提取信息时显示专注，等待确认时显示倾听。", rawText: "把 Codex 的工作状态映射到桌宠表情，提取信息时显示专注，等待确认时显示倾听。", organizer: { mode: "raw", model: "local-rules", durationMs: 0, status: "success", fallback: false } },
+  { id: 3, time: "11:08", date: "今天", duration: "19 秒", count: "83 字", text: "桌宠屏幕需要根据环境光自动调节亮度，同时保留手动亮度上限，夜间不能太刺眼。", rawText: "桌宠屏幕需要根据环境光自动调节亮度，同时保留手动亮度上限，夜间不能太刺眼。", organizer: { mode: "raw", model: "local-rules", durationMs: 0, status: "success", fallback: false } },
+  { id: 4, time: "09:42", date: "昨天", duration: "8 秒", count: "31 字", text: "按键一设置为语音输入，按键二设置为回车，旋钮控制音量。", rawText: "按键一设置为语音输入，按键二设置为回车，旋钮控制音量。", organizer: { mode: "raw", model: "local-rules", durationMs: 0, status: "success", fallback: false } },
 ];
 
 export const agents = [
