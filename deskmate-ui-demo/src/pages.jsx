@@ -43,6 +43,8 @@ import {
   IconUser as User,
 } from "@tabler/icons-react";
 import { agents, expressionPresets, historyItems, keyActions } from "./appData.js";
+import { useAppStore } from "./store/appStore.js";
+import { useRecorder } from "./hooks/useRecorder.js";
 import {
   Button,
   Card,
@@ -83,7 +85,8 @@ function ExpressionTile({ preset, selected, onClick, compact = false }) {
 }
 
 export function DashboardPage({ navigate, notify }) {
-  const [expression, setExpression] = useState("focus");
+  const { state, event } = useAppStore();
+  const expression = state.currentExpression;
   const selectedPreset = expressionPresets.find((item) => item.id === expression);
   return (
     <div className="page page--dashboard">
@@ -118,7 +121,7 @@ export function DashboardPage({ navigate, notify }) {
           <div className="task-divider" />
           <div className="card-heading"><strong>工作表情</strong><button className="text-link" onClick={() => navigate("expressions")}>管理表情 <ArrowRight size={14} /></button></div>
           <div className="expression-row">
-            {expressionPresets.slice(0, 3).map((item) => <ExpressionTile key={item.id} compact preset={item} selected={expression === item.id} onClick={() => setExpression(item.id)} />)}
+            {expressionPresets.slice(0, 3).map((item) => <ExpressionTile key={item.id} compact preset={item} selected={expression === item.id} onClick={() => event({ type: item.id === "focus" ? "working" : item.id === "listen" ? "listening" : "thinking", agent: "Codex", progress: state.aiEvent.progress, detail: state.aiEvent.detail })} />)}
           </div>
           <div className="sync-line"><span />状态同步正常 · 2 秒前</div>
         </Card>
@@ -128,26 +131,20 @@ export function DashboardPage({ navigate, notify }) {
 }
 
 export function VoicePage({ notify }) {
-  const [recording, setRecording] = useState(false);
-  const [seconds, setSeconds] = useState(0);
-  const [source, setSource] = useState("computer");
+  const { state, patch } = useAppStore();
+  const [source, setSource] = useState(state.settings.microphoneId || "");
+  const [devices, setDevices] = useState([]);
   const [transcript, setTranscript] = useState("");
+  const [recordingItem, setRecordingItem] = useState(null);
+  const { status, seconds, level, error, start, stop, cancel } = useRecorder({ deviceId: source || undefined, onComplete: (item) => { setRecordingItem(item); setTranscript("录音完成，等待转写服务"); patch({ history: [{ id: Date.now(), time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), date: "今天", duration: `${item.duration} 秒`, count: "待转写", text: "录音完成，等待转写服务" }, ...state.history] }); notify("录音已完成，等待转写服务"); }, onError: notify });
+  const recording = status === "recording";
+  const toggleRecording = () => recording ? stop() : start();
   useEffect(() => {
-    if (!recording) return undefined;
-    const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
-    return () => window.clearInterval(timer);
-  }, [recording]);
-  const toggleRecording = () => {
-    if (recording) {
-      setRecording(false);
-      setTranscript("我们先把软件端的桌面工作台做好，再等待硬件端协议接入。桌宠会根据不同 AI 工具的运行状态显示对应表情。 ");
-      notify("录音已完成并生成演示转写");
-    } else {
-      setSeconds(0);
-      setTranscript("");
-      setRecording(true);
-    }
-  };
+    let active = true;
+    const list = async () => { try { const items = await navigator.mediaDevices?.enumerateDevices?.() || []; if (active) setDevices(items.filter((item) => item.kind === "audioinput")); } catch { /* permissions may hide labels */ } };
+    list(); navigator.mediaDevices?.addEventListener?.("devicechange", list); return () => { active = false; navigator.mediaDevices?.removeEventListener?.("devicechange", list); };
+  }, []);
+  useEffect(() => { if (source && devices.length && !devices.some((device) => device.deviceId === source)) { setSource(""); patch({ settings: { ...state.settings, microphoneId: "" } }); notify("所选麦克风已拔出，已切换为系统默认设备"); } }, [devices, source]);
   const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   return (
     <div className="page">
@@ -157,19 +154,22 @@ export function VoicePage({ notify }) {
           <div><span className="section-kicker"><span>01</span>语音输入</span><p>专注录音与转写</p></div>
           <div className="source-switch">
             <Microphone2 size={18} />
-            <Segmented compact value={source} onChange={setSource} options={[{ value: "computer", label: "电脑麦克风" }, { value: "keyboard", label: "键盘麦克风" }]} />
+            <select className="voice-device-select" value={source} onChange={(event) => { setSource(event.target.value); patch({ settings: { ...state.settings, microphoneId: event.target.value } }); }} aria-label="麦克风设备"><option value="">系统默认麦克风</option>{devices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `麦克风 ${index + 1}`}</option>)}</select>
           </div>
         </div>
-        <div className={`recorder ${recording ? "is-recording" : ""}`}>
-          <div className="recorder__state"><span className="pulse-dot" />{recording ? "正在录音…" : transcript ? "转写完成" : "准备就绪"}</div>
+          <div className={`recorder ${recording ? "is-recording" : ""}`}>
+          <div className="recorder__state"><span className="pulse-dot" />{recording ? "正在录音…" : transcript ? "录音完成" : "准备就绪"}</div>
           <div className="waveform" aria-label="录音声波">
-            {Array.from({ length: 42 }).map((_, index) => <span key={index} style={{ "--height": `${recording ? 18 + ((index * 17) % 52) : 8 + ((index * 7) % 14)}px`, "--delay": `${index * -0.04}s` }} />)}
+            {Array.from({ length: 42 }).map((_, index) => <span key={index} style={{ "--height": `${recording ? Math.max(8, level * (0.35 + ((index % 5) / 10))) : 8 + ((index * 7) % 14)}px`, "--delay": `${index * -0.04}s` }} />)}
           </div>
           <div className="recorder__time">{time}</div>
-          <p className="recorder__transcript">{transcript || (recording ? "正在识别你的声音…" : "按下按钮或使用快捷键开始录音")}</p>
+          <p className="recorder__transcript">{transcript || (recording ? "正在采集音频…" : "按下按钮或使用快捷键开始录音")}</p>
           <Button icon={recording ? PlayerPause : Microphone2} variant={recording ? "danger" : "primary"} onClick={toggleRecording}>{recording ? "停止录音" : "开始录音"}</Button>
+          {recording && <Button variant="ghost" onClick={cancel}>取消</Button>}
+          {recordingItem?.blob && <audio controls src={URL.createObjectURL(recordingItem.blob)} />}
+          {error && <Notice tone="warning" title="麦克风不可用">{error}</Notice>}
         </div>
-        <div className="voice-statusbar"><span>状态 · {recording ? "正在录音" : "准备就绪"}</span><span>快捷键 · <Keycap>Ctrl</Keycap><Keycap>Shift</Keycap><Keycap>Space</Keycap></span><span>悬浮窗 · 已开启</span></div>
+      <div className="voice-statusbar"><span>状态 · {recording ? "正在录音" : status === "error" ? "不可用" : "准备就绪"}</span><span>音量 · {level}%</span><span>悬浮窗 · {state.settings.floating ? "已开启" : "已关闭"}</span></div>
       </Card>
       <div className="two-column compact-panels">
         <Card><SectionTitle index="02" title="输出方式" /><SettingRow title="智能整理" description="移除口头语并按语义分段"><Toggle checked onChange={() => notify("将在下一次录音时生效")} /></SettingRow></Card>
@@ -180,8 +180,10 @@ export function VoicePage({ notify }) {
 }
 
 export function HistoryPage({ notify }) {
+  const { state, patch } = useAppStore();
   const [query, setQuery] = useState("");
-  const [items, setItems] = useState(historyItems);
+  const items = state.history;
+  const setItems = (next) => patch({ history: typeof next === "function" ? next(state.history) : next });
   const filtered = items.filter((item) => item.text.includes(query) || item.time.includes(query));
   const copy = async (text) => { try { await navigator.clipboard.writeText(text); } catch { /* demo fallback */ } notify("内容已复制"); };
   return (
@@ -196,9 +198,12 @@ export function HistoryPage({ notify }) {
 }
 
 export function VocabularyPage({ notify }) {
-  const [hotwords, setHotwords] = useState(["DeskMate", "ESP32-S3", "Codex", "Claude Code", "Hermes"]);
+  const { state, patch } = useAppStore();
+  const hotwords = state.vocabulary.hotwords;
+  const rules = state.vocabulary.rules;
+  const setHotwords = (next) => patch({ vocabulary: { ...state.vocabulary, hotwords: typeof next === "function" ? next(hotwords) : next } });
+  const setRules = (next) => patch({ vocabulary: { ...state.vocabulary, rules: typeof next === "function" ? next(rules) : next } });
   const [newWord, setNewWord] = useState("");
-  const [rules, setRules] = useState([{ from: "桌面宠物", to: "桌宠" }, { from: "克劳德代码", to: "Claude Code" }]);
   const addWord = () => { if (!newWord.trim()) return; setHotwords([...hotwords, newWord.trim()]); setNewWord(""); notify("热词已添加"); };
   return (
     <div className="page">
@@ -220,9 +225,10 @@ export function VocabularyPage({ notify }) {
 }
 
 export function KeymapPage({ notify }) {
+  const { state, patch } = useAppStore();
   const [selectedKey, setSelectedKey] = useState(0);
-  const [actions, setActions] = useState(["语音输入", "回车", "语音编辑", "退格", "全选", "复制", "粘贴", "撤销"]);
-  const update = (value) => setActions(actions.map((action, index) => index === selectedKey ? value : action));
+  const actions = state.keymap;
+  const update = (value) => patch({ keymap: actions.map((action, index) => index === selectedKey ? value : action) });
   return (
     <div className="page">
       <PageIntro title="按键配置" description="配置键盘按键、旋钮和快捷动作" actions={<><StatusBadge tone="success">EasyInput AI 已连接</StatusBadge><Button icon={Send} variant="primary" onClick={() => notify("配置已模拟同步到键盘")}>同步到键盘</Button></>} />
@@ -247,9 +253,12 @@ export function KeymapPage({ notify }) {
 }
 
 export function ConnectionsPage({ notify }) {
+  const { state, patch } = useAppStore();
   const [tab, setTab] = useState("overview");
-  const [mic, setMic] = useState("computer");
-  const [startupSound, setStartupSound] = useState(true);
+  const mic = state.settings.microphoneSource || "computer";
+  const setMic = (value) => patch({ settings: { ...state.settings, microphoneSource: value } });
+  const startupSound = state.settings.startupSound;
+  const setStartupSound = (value) => patch({ settings: { ...state.settings, startupSound: value } });
   const [wifiName, setWifiName] = useState("");
   return (
     <div className="page">
@@ -269,14 +278,16 @@ export function ConnectionsPage({ notify }) {
 }
 
 export function AgentsPage({ notify }) {
-  const [mapping, setMapping] = useState({ codex: "专注", claude: "倾听", hermes: "思考", workbody: "开心" });
+  const { state, patch, event } = useAppStore();
+  const mapping = state.expressionMapping;
+  const setMapping = (next) => patch({ expressionMapping: next });
   return (
     <div className="page">
       <PageIntro title="AI 联动" description="把编程助手的运行状态映射到桌宠灯效和表情" actions={<Button icon={Plus} variant="primary" onClick={() => notify("自定义适配器将在开发阶段开放")}>添加适配器</Button>} />
       <Notice tone="demo" title="适配器 Demo">Codex、Claude Code、Hermes 和 Workbody 的自动状态读取尚未接入，本页演示未来的映射逻辑。</Notice>
       <div className="agent-grid">{agents.map((agent) => <Card key={agent.id} className={`agent-card agent-card--${agent.tone}`}>
         <div className="agent-card__head"><span className="agent-icon"><Code size={24} /></span><StatusBadge tone={agent.state === "工作中" ? "success" : agent.state === "待命" ? "neutral" : "warning"}>{agent.state}</StatusBadge></div>
-        <h3>{agent.name}</h3><p>{agent.detail}</p>
+        <h3>{agent.name}</h3><p>{agent.id === "codex" ? state.aiEvent.detail : agent.detail}</p>
         {agent.progress > 0 && <div className="agent-progress"><span style={{ width: `${agent.progress}%` }} /><small>{agent.progress}%</small></div>}
         <label>工作时表情<Select value={mapping[agent.id]} onChange={(value) => setMapping({ ...mapping, [agent.id]: value })}>{expressionPresets.map((item) => <option key={item.id}>{item.name}</option>)}</Select></label>
         <Button icon={agent.state === "未连接" || agent.state === "未配置" ? Settings2 : Eye} onClick={() => notify(`${agent.name} 配置面板为演示状态`)}>{agent.state === "未连接" || agent.state === "未配置" ? "配置" : "查看状态"}</Button>
@@ -301,11 +312,9 @@ export function ExpressionsPage({ navigate, notify }) {
 }
 
 export function ExpressionEditorPage({ notify }) {
-  const [eyeSize, setEyeSize] = useState(72);
-  const [eyeGap, setEyeGap] = useState(58);
-  const [brightness, setBrightness] = useState(80);
-  const [blink, setBlink] = useState(true);
-  const [color, setColor] = useState("cyan");
+  const { state, patch } = useAppStore();
+  const { eyeSize, eyeGap, brightness, blink, color } = state.expressionEditor;
+  const updateEditor = (value) => patch({ expressionEditor: { ...state.expressionEditor, ...value } });
   return (
     <div className="page">
       <PageIntro title="表情编辑" description="调整眼睛、嘴型、颜色和动画节奏" actions={<><Button icon={Eye} onClick={() => notify("预览已同步到虚拟桌宠")}>实时预览</Button><Button icon={DeviceFloppy} variant="primary" onClick={() => notify("表情“专注 Pro”已保存")}>保存表情</Button></>} />
@@ -313,12 +322,12 @@ export function ExpressionEditorPage({ notify }) {
         <Card className="editor-preview"><div className="card-heading"><strong>实时预览</strong><StatusBadge tone="demo">虚拟设备</StatusBadge></div><div className={`editor-face editor-face--${color}`} style={{ "--eye-size": `${eyeSize}%`, "--eye-gap": `${eyeGap}px`, opacity: 0.55 + brightness / 220 }}><MoodNerd size={230} stroke={1.25} /></div><div className="preview-note">硬件屏幕协议接入后，将使用相同参数生成端侧动画。</div></Card>
         <Card className="editor-controls">
           <SectionTitle index="01" title="眼睛" />
-          <SettingRow title="眼睛尺寸" description="控制两只眼睛的整体大小"><Slider label="眼睛尺寸" value={eyeSize} onChange={setEyeSize} /></SettingRow>
-          <SettingRow title="眼间距" description="适配不同宽度的显示屏"><Slider label="眼间距" value={eyeGap} onChange={setEyeGap} min={32} max={96} suffix=" px" /></SettingRow>
-          <SettingRow title="自动眨眼" description="空闲时随机眨眼，更有生命感"><Toggle checked={blink} onChange={setBlink} /></SettingRow>
+          <SettingRow title="眼睛尺寸" description="控制两只眼睛的整体大小"><Slider label="眼睛尺寸" value={eyeSize} onChange={(value) => updateEditor({ eyeSize: value })} /></SettingRow>
+          <SettingRow title="眼间距" description="适配不同宽度的显示屏"><Slider label="眼间距" value={eyeGap} onChange={(value) => updateEditor({ eyeGap: value })} min={32} max={96} suffix=" px" /></SettingRow>
+          <SettingRow title="自动眨眼" description="空闲时随机眨眼，更有生命感"><Toggle checked={blink} onChange={(value) => updateEditor({ blink: value })} /></SettingRow>
           <SectionTitle index="02" title="颜色与亮度" />
-          <div className="color-options">{["cyan", "blue", "violet", "green", "amber"].map((item) => <button aria-label={`${item} 颜色`} className={`${item} ${color === item ? "is-selected" : ""}`} onClick={() => setColor(item)} key={item} />)}</div>
-          <SettingRow title="显示亮度" description="最终值还会受到环境光上限约束"><Slider label="显示亮度" value={brightness} onChange={setBrightness} /></SettingRow>
+          <div className="color-options">{["cyan", "blue", "violet", "green", "amber"].map((item) => <button aria-label={`${item} 颜色`} className={`${item} ${color === item ? "is-selected" : ""}`} onClick={() => updateEditor({ color: item })} key={item} />)}</div>
+          <SettingRow title="显示亮度" description="最终值还会受到环境光上限约束"><Slider label="显示亮度" value={brightness} onChange={(value) => updateEditor({ brightness: value })} /></SettingRow>
         </Card>
       </div>
     </div>
@@ -326,9 +335,9 @@ export function ExpressionEditorPage({ notify }) {
 }
 
 export function MotionPage({ notify }) {
-  const [preset, setPreset] = useState("attentive");
-  const [speed, setSpeed] = useState(45);
-  const [range, setRange] = useState(55);
+  const { state, patch } = useAppStore();
+  const { preset, speed, range } = state.motion;
+  const updateMotion = (value) => patch({ motion: { ...state.motion, ...value } });
   const [testing, setTesting] = useState(false);
   const play = () => { setTesting(true); notify("正在播放虚拟动作预览"); window.setTimeout(() => setTesting(false), 1800); };
   return (
@@ -337,7 +346,7 @@ export function MotionPage({ notify }) {
       <Notice tone="demo" title="虚拟动作预览">双轴舵机型号、角度零点和安全限位尚未确定，当前只展示动作编排体验。</Notice>
       <div className="motion-grid">
         <Card className="motion-stage"><div className={`motion-avatar ${testing ? `is-playing is-${preset}` : ""}`}><img src="/assets/deskmate-focus-face.png" alt="桌宠动作预览" /></div><div className="axis-controls"><Button icon={ArrowLeft}>左转</Button><Button icon={ArrowUp}>抬头</Button><Button icon={ArrowDown}>点头</Button><Button icon={ArrowRight}>右转</Button></div></Card>
-        <Card><SectionTitle index="01" title="动作参数" /><label className="field-label">动作预设<Segmented value={preset} onChange={setPreset} options={[{ value: "attentive", label: "关注" }, { value: "nod", label: "点头" }, { value: "search", label: "寻找" }]} /></label><SettingRow title="动作速度" description="速度越高，运动越利落"><Slider label="动作速度" value={speed} onChange={setSpeed} /></SettingRow><SettingRow title="运动范围" description="限制头部最大转动角度"><Slider label="运动范围" value={range} onChange={setRange} min={10} max={80} suffix="°" /></SettingRow><SettingRow title="柔性起停" description="减少舵机突然启动带来的晃动"><Toggle checked onChange={() => notify("柔性起停已保持开启")} /></SettingRow></Card>
+        <Card><SectionTitle index="01" title="动作参数" /><label className="field-label">动作预设<Segmented value={preset} onChange={(value) => updateMotion({ preset: value })} options={[{ value: "attentive", label: "关注" }, { value: "nod", label: "点头" }, { value: "search", label: "寻找" }]} /></label><SettingRow title="动作速度" description="速度越高，运动越利落"><Slider label="动作速度" value={speed} onChange={(value) => updateMotion({ speed: value })} /></SettingRow><SettingRow title="运动范围" description="限制头部最大转动角度"><Slider label="运动范围" value={range} onChange={(value) => updateMotion({ range: value })} min={10} max={80} suffix="°" /></SettingRow><SettingRow title="柔性起停" description="减少舵机突然启动带来的晃动"><Toggle checked onChange={() => notify("柔性起停已保持开启")} /></SettingRow></Card>
       </div>
       <Card><SectionTitle index="02" title="动作时间线" description="把表情和动作组合为一段可复用行为。" /><div className="timeline"><span className="timeline-label">0s</span><div className="timeline-track"><i style={{ left: "4%", width: "22%" }}>看向用户</i><i style={{ left: "32%", width: "18%" }}>眨眼</i><i style={{ left: "56%", width: "32%" }}>轻点头 × 2</i></div><span className="timeline-label">4s</span></div></Card>
     </div>
@@ -345,8 +354,9 @@ export function MotionPage({ notify }) {
 }
 
 export function SensorsPage({ notify }) {
-  const [autoBrightness, setAutoBrightness] = useState(true);
-  const [faceTracking, setFaceTracking] = useState(false);
+  const { state, patch } = useAppStore();
+  const { autoBrightness, faceTracking } = state.sensors;
+  const updateSensors = (value) => patch({ sensors: { ...state.sensors, ...value } });
   const bars = useMemo(() => Array.from({ length: 28 }).map((_, index) => 28 + ((index * 19) % 56)), []);
   return (
     <div className="page">
@@ -354,27 +364,31 @@ export function SensorsPage({ notify }) {
       <div className="metric-grid"><Metric label="环境温度" value="24.6" unit="℃" trend="舒适范围" tone="orange" /><Metric label="空气湿度" value="46" unit="%" trend="较昨日 +2%" tone="blue" /><Metric label="环境光" value="328" unit="lx" trend="建议亮度 68%" tone="cyan" /><Metric label="用户方向" value="0" unit="°" trend="位于设备正前方" tone="violet" /></div>
       <div className="two-column sensor-layout">
         <Card><SectionTitle index="01" title="24 小时环境趋势" /><div className="sensor-chart">{bars.map((height, index) => <span key={index} style={{ height: `${height}%` }} title={`${index}:00`} />)}</div><div className="chart-legend"><span><i className="blue" />环境光</span><span><i className="orange" />温度</span><span>00:00</span><span>12:00</span><span>现在</span></div></Card>
-        <Card><SectionTitle index="02" title="自动调节" /><SettingRow icon={Sun} title="屏幕自动亮度" description="根据环境光调节桌宠屏幕亮度"><Toggle checked={autoBrightness} onChange={setAutoBrightness} /></SettingRow><SettingRow icon={User} title="面向用户" description="根据方向传感器或视觉模块转向用户"><Toggle checked={faceTracking} onChange={setFaceTracking} /></SettingRow><SettingRow icon={Temperature} title="温湿度提醒" description="超出舒适范围时显示提醒表情"><Toggle checked onChange={() => notify("温湿度提醒已保持开启")} /></SettingRow><Notice tone="info" title="人脸方向检测建议">单独使用红外距离传感器难以区分人脸和手部。后续可选用摄像头视觉模块，或使用左右两组 ToF / PIR 做粗略方向判断。</Notice></Card>
+        <Card><SectionTitle index="02" title="自动调节" /><SettingRow icon={Sun} title="屏幕自动亮度" description="根据环境光调节桌宠屏幕亮度"><Toggle checked={autoBrightness} onChange={(value) => updateSensors({ autoBrightness: value })} /></SettingRow><SettingRow icon={User} title="面向用户" description="根据方向传感器或视觉模块转向用户"><Toggle checked={faceTracking} onChange={(value) => updateSensors({ faceTracking: value })} /></SettingRow><SettingRow icon={Temperature} title="温湿度提醒" description="超出舒适范围时显示提醒表情"><Toggle checked onChange={() => notify("温湿度提醒已保持开启")} /></SettingRow><Notice tone="info" title="人脸方向检测建议">单独使用红外距离传感器难以区分人脸和手部。后续可选用摄像头视觉模块，或使用左右两组 ToF / PIR 做粗略方向判断。</Notice></Card>
       </div>
     </div>
   );
 }
 
 export function SettingsPage({ notify }) {
+  const { state, patch, reset, replace, exportConfig } = useAppStore();
   const [section, setSection] = useState("input");
-  const [operation, setOperation] = useState("toggle");
-  const [format, setFormat] = useState("smart");
-  const [theme, setTheme] = useState("system");
-  const [floating, setFloating] = useState(true);
+  const operation = state.settings.operation;
+  const format = state.settings.formatting;
+  const theme = state.settings.theme;
+  const floating = state.settings.floating;
+  const updateSettings = (value) => patch({ settings: { ...state.settings, ...value } });
+  const downloadConfig = () => { const blob = new Blob([exportConfig()], { type: "application/json" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "deskmate-config.json"; link.click(); URL.revokeObjectURL(link.href); notify("配置 JSON 已导出"); };
+  const importConfig = (event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { replace(JSON.parse(reader.result)); notify("配置已导入"); } catch (error) { notify(`导入失败：${error.message}`); } }; reader.readAsText(file); event.target.value = ""; };
   return (
     <div className="page">
-      <PageIntro title="设置与诊断" description="管理快捷键、输入方式、外观和系统诊断" actions={<Button icon={Refresh} onClick={() => notify("设置已恢复为演示默认值")}>恢复默认</Button>} />
+      <PageIntro title="设置与诊断" description="管理快捷键、输入方式、外观和系统诊断" actions={<><Button icon={Upload} onClick={() => document.getElementById("config-import").click()}>导入配置</Button><input id="config-import" type="file" accept="application/json" hidden onChange={importConfig} /><Button icon={Download} onClick={downloadConfig}>导出配置</Button><Button icon={Refresh} onClick={() => { reset(); notify("设置已恢复为默认值"); }}>恢复默认</Button></>} />
       <div className="settings-layout">
         <Card className="settings-nav">{[{ id: "input", icon: Keyboard, label: "输入与快捷键" }, { id: "format", icon: Book2, label: "文字整理" }, { id: "appearance", icon: Sun, label: "外观与悬浮窗" }, { id: "account", icon: User, label: "账户" }, { id: "diagnostics", icon: Gauge, label: "系统诊断" }].map((item) => <button className={section === item.id ? "is-active" : ""} onClick={() => setSection(item.id)} key={item.id}><item.icon size={19} /><span>{item.label}</span><ArrowRight size={16} /></button>)}</Card>
         <Card className="settings-panel">
-          {section === "input" && <><SectionTitle index="01" title="快捷键" /><SettingRow title="语音输入快捷键" description="按此快捷键开始或结束语音输入"><div className="key-sequence"><Keycap>Ctrl</Keycap><Keycap>Shift</Keycap><Keycap>Space</Keycap></div></SettingRow><SettingRow title="语音编辑快捷键" description="选中文字后说出修改要求"><div className="key-sequence"><Keycap>Ctrl</Keycap><Keycap>Shift</Keycap><Keycap>E</Keycap></div></SettingRow><SettingRow title="快捷键操作方式" description="语音输入和语音编辑共同使用"><Segmented compact value={operation} onChange={setOperation} options={[{ value: "hold", label: "按住说话" }, { value: "toggle", label: "按一下开始" }]} /></SettingRow></>}
-          {section === "format" && <><SectionTitle index="02" title="文字整理" /><SettingRow title="整理方式" description="所有方式都以不改变原意为前提"><Segmented value={format} onChange={setFormat} options={[{ value: "raw", label: "原样输出" }, { value: "smart", label: "智能整理" }, { value: "custom", label: "自定义" }]} /></SettingRow><SettingRow title="标点格式" description="仅调整语音编辑结果的标点"><Select value="智能默认"><option>智能默认</option><option>中文标点</option><option>英文标点</option></Select></SettingRow><Notice tone="success" title="当前规则">{format === "raw" ? "保留识别结果，只应用词库纠错。" : format === "smart" ? "自动修正口误、适当分段并精简重复表达。" : "使用你保存的自定义提示词整理文字。"}</Notice></>}
-          {section === "appearance" && <><SectionTitle index="03" title="外观与悬浮窗" /><SettingRow title="外观" description="跟随系统外观，或手动固定亮色 / 暗色"><Segmented value={theme} onChange={setTheme} options={[{ value: "system", label: "跟随系统" }, { value: "light", label: "亮色" }, { value: "dark", label: "暗色" }]} /></SettingRow><SettingRow title="悬浮窗显示" description="录音时显示状态和实时识别文字"><Toggle checked={floating} onChange={setFloating} /></SettingRow><SettingRow title="背景不透明度" description="数值越高，悬浮窗背景越实"><Slider label="背景不透明度" value={70} /></SettingRow></>}
+          {section === "input" && <><SectionTitle index="01" title="快捷键" /><SettingRow title="语音输入快捷键" description="按此快捷键开始或结束语音输入"><div className="key-sequence"><Keycap>Ctrl</Keycap><Keycap>Shift</Keycap><Keycap>Space</Keycap></div></SettingRow><SettingRow title="语音编辑快捷键" description="选中文字后说出修改要求"><div className="key-sequence"><Keycap>Ctrl</Keycap><Keycap>Shift</Keycap><Keycap>E</Keycap></div></SettingRow><SettingRow title="快捷键操作方式" description="语音输入和语音编辑共同使用"><Segmented compact value={operation} onChange={(value) => updateSettings({ operation: value })} options={[{ value: "hold", label: "按住说话" }, { value: "toggle", label: "按一下开始" }]} /></SettingRow></>}
+          {section === "format" && <><SectionTitle index="02" title="文字整理" /><SettingRow title="整理方式" description="所有方式都以不改变原意为前提"><Segmented value={format} onChange={(value) => updateSettings({ formatting: value })} options={[{ value: "raw", label: "原样输出" }, { value: "smart", label: "智能整理" }, { value: "custom", label: "自定义" }]} /></SettingRow><SettingRow title="标点格式" description="仅调整语音编辑结果的标点"><Select value="智能默认"><option>智能默认</option><option>中文标点</option><option>英文标点</option></Select></SettingRow><Notice tone="success" title="当前规则">{format === "raw" ? "保留识别结果，只应用词库纠错。" : format === "smart" ? "自动修正口误、适当分段并精简重复表达。" : "使用你保存的自定义提示词整理文字。"}</Notice></>}
+          {section === "appearance" && <><SectionTitle index="03" title="外观与悬浮窗" /><SettingRow title="外观" description="跟随系统外观，或手动固定亮色 / 暗色"><Segmented value={theme} onChange={(value) => updateSettings({ theme: value })} options={[{ value: "system", label: "跟随系统" }, { value: "light", label: "亮色" }, { value: "dark", label: "暗色" }]} /></SettingRow><SettingRow title="悬浮窗显示" description="录音时显示状态和实时识别文字"><Toggle checked={floating} onChange={(value) => updateSettings({ floating: value })} /></SettingRow><SettingRow title="背景不透明度" description="数值越高，悬浮窗背景越实"><Slider label="背景不透明度" value={70} /></SettingRow></>}
           {section === "account" && <><SectionTitle index="04" title="账户" /><div className="account-card"><span className="avatar"><User size={28} /></span><div><strong>DeskMate Demo 用户</strong><p>本地演示账户 · 不上传私人记录</p></div><StatusBadge tone="success">已登录</StatusBadge></div><SettingRow title="当前方案" description="Demo 版本开放全部界面功能"><span className="plan-pill">原型体验版</span></SettingRow><Button variant="ghost" icon={Lock}>隐私与数据说明</Button></>}
           {section === "diagnostics" && <><SectionTitle index="05" title="系统诊断" /><div className="diagnostic-list">{[["桌面应用运行", true], ["语音服务", true], ["USB HID 键盘", true], ["键盘网络音频", false], ["桌宠串口协议", false], ["AI 状态适配器", false]].map(([label, ok]) => <div key={label}><span>{ok ? <Check size={18} /> : <AlertCircle size={18} />}</span><strong>{label}</strong><StatusBadge tone={ok ? "success" : "demo"}>{ok ? "正常" : "待接入"}</StatusBadge></div>)}</div><Button icon={CloudDownload} onClick={() => notify("诊断报告已生成（演示）")}>导出诊断报告</Button></>}
         </Card>

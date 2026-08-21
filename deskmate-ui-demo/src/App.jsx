@@ -21,6 +21,8 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 import { pageMeta } from "./appData.js";
+import { AppStoreProvider, useAppStore } from "./store/appStore.js";
+import { mockAdapters } from "./adapters/index.js";
 import {
   AgentsPage,
   ConnectionsPage,
@@ -126,10 +128,16 @@ function resolveHash() {
 }
 
 export function App() {
+  return <AppStoreProvider><AppContent /></AppStoreProvider>;
+}
+
+function AppContent() {
   const [current, setCurrent] = useState(resolveHash);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const { dispatch } = useAppStore();
+  useEffect(() => mockAdapters.agentStatus.subscribe((next) => dispatch({ type: "event", value: next })), [dispatch]);
   useEffect(() => {
     const onHash = () => setCurrent(resolveHash());
     window.addEventListener("hashchange", onHash);
