@@ -164,6 +164,7 @@ select { appearance: auto; }
 .metric__trend { color: #8d98a6; font-size: 10px; }
 .field-label { display: flex; flex-direction: column; gap: 8px; color: #556273; font-size: 12px; margin-block: 14px; }
 .button-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.secret-field { position: relative; display: block; }.secret-field input { width: 100%; padding-right: 48px; }.secret-field button { position: absolute; right: 8px; top: 50%; width: 36px; height: 36px; display: grid; place-items: center; transform: translateY(-50%); border: 0; border-radius: 10px; color: #6d7a8b; background: transparent; cursor: pointer; }.secret-field button:hover { color: var(--blue); background: #eef4ff; }.secret-field button:focus-visible { outline: 2px solid #7ca6ff; outline-offset: 1px; }
 .key-sequence { display: flex; align-items: center; gap: 6px; }
 kbd { display: inline-grid; place-items: center; min-width: 36px; height: 30px; padding: 0 8px; border: 1px solid #d8e0e8; border-bottom-width: 3px; border-radius: 8px; background: #fff; color: #4e5c6d; font: 11px Inter, sans-serif; box-shadow: 0 2px 5px rgba(31,46,66,.05); }
 

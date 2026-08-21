@@ -19,6 +19,7 @@ let voiceSessionRecording = false;
 let voiceTargetWindow = null;
 let bailianStore;
 const smokeMode = process.argv.includes("--deskmate-smoke-test");
+const bailianTestAudio = process.argv.find((value) => value.startsWith("--bailian-test-audio="))?.slice("--bailian-test-audio=".length) || "";
 let smokeStage = 0;
 
 if (smokeMode) {
@@ -175,8 +176,26 @@ function createWindow() {
   mainWindow.on("closed", () => { mainWindow = null; });
 }
 
-app.whenReady().then(() => {
+async function runBailianConnectionTest(audioPath) {
+  const resultPath = process.env.DESKMATE_BAILIAN_TEST_RESULT;
+  const report = { ok: false };
+  try {
+    const resolved = path.resolve(audioPath);
+    const extension = path.extname(resolved).toLowerCase();
+    if (![".wav", ".webm"].includes(extension)) throw new Error("测试音频只允许 WAV 或 WebM");
+    const audio = fs.readFileSync(resolved);
+    const result = await transcribeBailian({ ...bailianStore.loadSecret(), audio, mimeType: extension === ".wav" ? "audio/wav" : "audio/webm" });
+    Object.assign(report, { ok: true, characters: result.text.length, language: result.language, emotion: result.emotion, requestId: result.requestId });
+  } catch (error) {
+    report.error = String(error?.message || error || "unknown-error").replace(/sk-[A-Za-z0-9_-]+/g, "[REDACTED]");
+  }
+  if (resultPath && path.extname(resultPath).toLowerCase() === ".json") fs.writeFileSync(resultPath, JSON.stringify(report, null, 2));
+  app.exit(report.ok ? 0 : 1);
+}
+
+app.whenReady().then(async () => {
   bailianStore = createSecureBailianStore({ safeStorage, userDataPath: app.getPath("userData") });
+  if (bailianTestAudio) { await runBailianConnectionTest(bailianTestAudio); return; }
   createWindow();
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => callback(permission === "media" && isAllowedAppUrl(webContents.getURL())));
   handleTrusted("desktop:get-capabilities", () => ({ supported: true, platform: process.platform, shortcut, shortcutRegistered: globalShortcut.isRegistered(shortcut) }));
