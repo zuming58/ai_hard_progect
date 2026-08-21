@@ -25,7 +25,7 @@ function mergeDefaults(value) {
   return {
     ...structuredClone(defaultState), ...value, schemaVersion: SCHEMA_VERSION,
     vocabulary: { ...defaultState.vocabulary, ...(value.vocabulary || {}) },
-    settings: { ...defaultState.settings, ...(value.settings || {}) },
+    settings: { ...defaultState.settings, ...(value.settings || {}), operation: "toggle" },
     expressionMapping: { ...defaultState.expressionMapping, ...(value.expressionMapping || {}) },
     agentExpressionMapping: { ...defaultState.agentExpressionMapping, ...(value.agentExpressionMapping || {}) },
     expressionEditor: { ...defaultState.expressionEditor, ...(value.expressionEditor || {}) },
@@ -60,6 +60,10 @@ export function validateConfig(value) {
   if (value.vocabulary?.hotwords && (!Array.isArray(value.vocabulary.hotwords) || value.vocabulary.hotwords.some((item) => typeof item !== "string"))) throw new Error("热词格式无效");
   if (value.vocabulary?.rules && (!Array.isArray(value.vocabulary.rules) || value.vocabulary.rules.some((item) => !item || typeof item.from !== "string" || typeof item.to !== "string"))) throw new Error("替换规则格式无效");
   if (value.settings !== undefined && (!value.settings || typeof value.settings !== "object" || Array.isArray(value.settings))) throw new Error("设置格式无效");
+  if (value.settings?.voiceShortcut !== undefined && (typeof value.settings.voiceShortcut !== "string" || value.settings.voiceShortcut.length > 64)) throw new Error("语音快捷键格式无效");
+  if (value.settings?.outputMode !== undefined && !["history", "clipboard"].includes(value.settings.outputMode)) throw new Error("文字输出方式无效");
+  if (value.settings?.activeWindowOutputEnabled !== undefined && typeof value.settings.activeWindowOutputEnabled !== "boolean") throw new Error("当前窗口输出设置无效");
+  if (value.settings?.keyDiagnosticsEnabled !== undefined && typeof value.settings.keyDiagnosticsEnabled !== "boolean") throw new Error("按键诊断设置无效");
   const expressionIds = new Set(expressionPresets.map((item) => item.id));
   const checkExpressionMap = (mapping, label) => {
     if (mapping === undefined) return;

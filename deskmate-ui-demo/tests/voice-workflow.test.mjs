@@ -1,30 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { VoiceWorkflow } from "../src/services/voiceWorkflow.js";
-import { DesktopBridgeAdapter, EasyInputLanAudioAdapter, SttAdapter, TextOrganizerAdapter, TextOutputAdapter } from "../src/adapters/voiceAdapters.js";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { shouldIgnoreToggle } from "../src/hooks/useRecorder.js";
+import { DesktopBridgeAdapter, EasyInputLanAudioAdapter, TextOutputAdapter } from "../src/adapters/voiceAdapters.js";
 
-function setup(overrides = {}) {
-  const calls = [];
-  const recorder = { start: async () => calls.push("start"), stop: async () => { calls.push("stop"); return { blob: new Blob(["audio"]), duration: 1 }; } };
-  const workflow = new VoiceWorkflow({ recorder, stt: new SttAdapter(), organizer: new TextOrganizerAdapter(), output: new TextOutputAdapter(), saveHistory: async (item) => { calls.push(item.text); return item; }, debounceMs: 100, ...overrides });
-  return { workflow, calls };
-}
+const require = createRequire(import.meta.url);
+const { normalizeShortcut } = require("../electron/shortcut.cjs");
 
-test("global shortcut and manual trigger share debounced start/stop state machine", async () => {
-  const { workflow, calls } = setup();
-  await workflow.toggle(1000);
-  await workflow.toggle(1050);
-  await workflow.toggle(1200);
-  assert.deepEqual(calls, ["start", "stop", "录音完成，等待转写服务"]);
-  assert.equal(workflow.state, "completed");
+test("the recorder debounce used by the real VoicePage ignores repeated toggles", () => {
+  assert.equal(shouldIgnoreToggle(1000, 1050, 100), true);
+  assert.equal(shouldIgnoreToggle(1000, 1200, 100), false);
 });
 
-test("STT failure still saves fallback history text", async () => {
-  const saved = [];
-  const { workflow } = setup({ stt: { transcribe: async () => { throw new Error("timeout"); } }, saveHistory: async (item) => { saved.push(item); return item; } });
-  await workflow.toggle(1000); const result = await workflow.toggle(1200);
-  assert.equal(result.transcript.status, "error");
-  assert.equal(saved[0].text, "录音完成，等待转写服务");
+test("desktop shortcuts are normalized and unsafe values are rejected", () => {
+  assert.equal(normalizeShortcut("ctrl + shift + space"), "Ctrl+Shift+Space");
+  assert.equal(normalizeShortcut("Alt+f9"), "Alt+F9");
+  assert.throws(() => normalizeShortcut("Space"), /修饰键/);
+  assert.throws(() => normalizeShortcut("Ctrl+Ctrl+A"), /重复/);
+  assert.throws(() => normalizeShortcut("DefinitelyNotAnAccelerator"), /修饰键/);
 });
 
 test("web desktop bridge safely degrades and LAN audio stays unavailable", async () => {
@@ -39,4 +33,10 @@ test("clipboard failure reports failure without deleting source text", async () 
   const output = new TextOutputAdapter({ writeClipboard: async () => ({ ok: false, reason: "denied" }) });
   const result = await output.output("保留在历史", "clipboard");
   assert.equal(result.ok, false);
+});
+
+test("desktop build emits relative asset URLs for file protocol loading", async () => {
+  const html = await readFile(new URL("../dist/client/index.html", import.meta.url), "utf8");
+  assert.doesNotMatch(html, /(?:src|href)="\/assets\//);
+  assert.match(html, /(?:src|href)="\.\/assets\//);
 });

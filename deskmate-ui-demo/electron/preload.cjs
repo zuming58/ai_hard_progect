@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("desktopBridge", {
   getCapabilities: () => ipcRenderer.invoke("desktop:get-capabilities"),
   registerShortcut: (shortcut) => ipcRenderer.invoke("desktop:register-shortcut", shortcut),
+  setVoiceRecording: (recording) => ipcRenderer.invoke("desktop:set-voice-recording", Boolean(recording)),
   writeClipboard: (text) => ipcRenderer.invoke("desktop:clipboard-write", text),
   pasteActiveWindow: (text) => ipcRenderer.invoke("desktop:paste-active-window", text),
   keyDiagnostic: (event) => ipcRenderer.invoke("desktop:key-diagnostic", event),

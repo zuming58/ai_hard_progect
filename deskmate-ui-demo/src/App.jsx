@@ -39,6 +39,8 @@ import {
   VoicePage,
 } from "./pages.jsx";
 
+const DEVICE_FACE_URL = `${import.meta.env.BASE_URL}assets/deskmate-focus-face.png`;
+
 const navigation = [
   { id: "dashboard", label: "工作台", icon: LayoutDashboard },
   { id: "voice", label: "语音输入", icon: Microphone2 },
@@ -85,7 +87,7 @@ function Sidebar({ current, navigate, collapsed, setCollapsed, mobileOpen, setMo
       </nav>
       <button className="sidebar__collapse" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "展开侧栏" : "收起侧栏"}>{collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}<span>收起导航</span></button>
       <div className="device-card">
-        <div className="device-card__screen"><img src="/assets/deskmate-focus-face.png" alt="DeskMate 设备" /></div>
+        <div className="device-card__screen"><img src={DEVICE_FACE_URL} alt="DeskMate 设备" /></div>
         <div className="device-card__status device-card__status--pending"><span />板子联动待接入</div>
         <small>Windows 已识别 HID · App 桥待接入</small>
       </div>
@@ -137,8 +139,19 @@ function AppContent() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState("");
-  const { event } = useAppStore();
+  const { event, state } = useAppStore();
   useEffect(() => mockAdapters.agentStatus.subscribe(event, { emitCurrent: false }), [event]);
+  useEffect(() => {
+    if (!window.desktopBridge) return undefined;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      voiceAdapters.desktop.registerShortcut(state.settings.voiceShortcut).then((result) => {
+        if (!active || !result.reason) return;
+        setToast(`快捷键未修改：${result.reason}；当前仍为 ${result.shortcut}`);
+      }).catch(() => { if (active) setToast("无法连接桌面快捷键服务"); });
+    }, 450);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [state.settings.voiceShortcut]);
   useEffect(() => voiceAdapters.desktop.onVoiceToggle((detail) => {
     window.location.hash = "/voice";
     window.setTimeout(() => window.dispatchEvent(new CustomEvent("deskmate:voice-toggle", { detail })), 0);
