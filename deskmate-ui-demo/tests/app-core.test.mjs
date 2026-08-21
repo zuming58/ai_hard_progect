@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultState, migrateState, validateConfig } from "../src/store/appStore.js";
+import { defaultState, loadState, migrateState, reduceAppState, validateConfig } from "../src/store/appStore.js";
 import { AI_EVENT_TYPES, AgentStatusAdapter } from "../src/adapters/index.js";
 
 test("migrates legacy storage to current schema without dropping defaults", () => {
@@ -15,6 +15,26 @@ test("rejects malformed imported configurations", () => {
   assert.throws(() => validateConfig({ keymap: ["only-one"] }), /8 项/);
   assert.throws(() => validateConfig({ schemaVersion: "1" }), /数字/);
   assert.throws(() => validateConfig(null), /JSON 对象/);
+  assert.throws(() => validateConfig({ currentExpression: "missing" }), /表情不存在/);
+  assert.throws(() => validateConfig({ history: "not-an-array" }), /历史记录/);
+  assert.throws(() => validateConfig({ expressionMapping: { working: "missing" } }), /状态表情映射/);
+  assert.throws(() => validateConfig({ schemaVersion: 99 }), /更高版本/);
+});
+
+test("falls back to defaults when persisted storage has an invalid shape", () => {
+  const storage = { getItem: () => JSON.stringify({ history: "bad", currentExpression: "missing" }) };
+  const result = loadState(storage);
+  assert.equal(result.currentExpression, defaultState.currentExpression);
+  assert.ok(Array.isArray(result.history));
+});
+
+test("maps AI events through status and agent-specific expression rules", () => {
+  const state = structuredClone(defaultState);
+  state.agentExpressionMapping.codex = "happy";
+  const working = reduceAppState(state, { type: "event", value: { type: "working", agent: "Codex", progress: 25, detail: "编码" } });
+  assert.equal(working.currentExpression, "happy");
+  const waiting = reduceAppState(working, { type: "event", value: { type: "waiting_user", agent: "Codex", progress: 25, detail: "等待" } });
+  assert.equal(waiting.currentExpression, state.expressionMapping.waiting_user);
 });
 
 test("agent adapter emits only supported events and maps status payload", () => {
@@ -25,4 +45,13 @@ test("agent adapter emits only supported events and maps status payload", () => 
   assert.deepEqual(received.at(-1), { type: "waiting_user", agent: "Codex", progress: 68, detail: "等待用户确认" });
   assert.deepEqual(AI_EVENT_TYPES, ["idle", "listening", "thinking", "working", "waiting_user", "completed", "error"]);
   assert.throws(() => adapter.setStatus({ type: "unknown" }), /未知 AI 状态/);
+});
+
+test("agent subscriptions can preserve restored application state on mount", () => {
+  const adapter = new AgentStatusAdapter();
+  const received = [];
+  adapter.subscribe((event) => received.push(event), { emitCurrent: false });
+  assert.equal(received.length, 0);
+  adapter.setStatus({ type: "completed", agent: "Codex", progress: 140, detail: "完成" });
+  assert.equal(received[0].progress, 100);
 });

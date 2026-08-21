@@ -85,8 +85,8 @@ function Sidebar({ current, navigate, collapsed, setCollapsed, mobileOpen, setMo
       <button className="sidebar__collapse" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "展开侧栏" : "收起侧栏"}>{collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}<span>收起导航</span></button>
       <div className="device-card">
         <div className="device-card__screen"><img src="/assets/deskmate-focus-face.png" alt="DeskMate 设备" /></div>
-        <div className="device-card__status"><span />设备已连接</div>
-        <small>USB HID · Demo</small>
+        <div className="device-card__status device-card__status--pending"><span />板子联动待接入</div>
+        <small>Windows 已识别 HID · App 桥待接入</small>
       </div>
     </aside>
   );
@@ -99,7 +99,7 @@ function AppHeader({ current, setMobileOpen }) {
       <button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileOpen(true)}><Menu2 size={22} /></button>
       <div className="breadcrumbs"><strong>DESKMATE</strong><span>/</span><span>{meta.title}</span></div>
       <div className="app-header__right">
-        <span className="service-status"><i />AI 服务已连接</span>
+        <span className="service-status"><i />本地核心已运行</span>
         <span className="app-date">8月20日 · 周四</span>
         <button className="header-icon" aria-label="通知"><Bell size={19} stroke={1.7} /><i /></button>
       </div>
@@ -136,8 +136,8 @@ function AppContent() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState("");
-  const { dispatch } = useAppStore();
-  useEffect(() => mockAdapters.agentStatus.subscribe((next) => dispatch({ type: "event", value: next })), [dispatch]);
+  const { event } = useAppStore();
+  useEffect(() => mockAdapters.agentStatus.subscribe(event, { emitCurrent: false }), [event]);
   useEffect(() => {
     const onHash = () => setCurrent(resolveHash());
     window.addEventListener("hashchange", onHash);
@@ -163,7 +163,7 @@ function AppContent() {
         <div className="app-content"><CurrentPage navigate={navigate} notify={setToast} /></div>
       </main>
       {toast && <div className="toast"><CircleCheck size={18} />{toast}</div>}
-      <div className="demo-watermark"><Sparkles size={14} />交互原型 · 硬件数据为模拟</div>
+      <div className="demo-watermark"><Sparkles size={14} />软件 MVP · 板子联动待接入</div>
     </div>
   );
 }
