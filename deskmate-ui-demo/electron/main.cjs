@@ -3,6 +3,8 @@ const path = require("path");
 const { fileURLToPath } = require("url");
 const { spawn } = require("child_process");
 const fs = require("fs");
+const os = require("os");
+const { summarizeNetworkInterfaces } = require("./network-summary.cjs");
 const { normalizeShortcut } = require("./shortcut.cjs");
 const { InputBridgeManager } = require("./input-bridge.cjs");
 const { transcribe: transcribeBailian } = require("./bailian.cjs");
@@ -358,6 +360,7 @@ app.whenReady().then(async () => {
   createTray();
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => callback(permission === "media" && isAllowedAppUrl(webContents.getURL())));
   handleTrusted("desktop:get-capabilities", () => ({ supported: true, platform: process.platform, shortcut, shortcutRegistered: globalShortcut.isRegistered(shortcut), inputBridge: inputBridge?.snapshot() || { available: false, process: process.platform === "win32" ? "missing" : "unsupported", boardConnected: false } }));
+  handleTrusted("desktop:get-network-summary", () => summarizeNetworkInterfaces(os.networkInterfaces()));
   handleTrusted("desktop:register-shortcut", (value) => registerShortcut(value));
   handleTrusted("desktop:set-trigger-config", (value) => ({ ok: true, config: inputBridge?.configure(value || {}) || { boardF22: true, rightAlt: false } }));
   handleTrusted("desktop:set-voice-recording", (recording) => { voiceSessionRecording = Boolean(recording); refreshTrayMenu(); return { ok: true, recording: voiceSessionRecording }; });

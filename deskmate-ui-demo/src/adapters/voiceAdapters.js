@@ -31,14 +31,13 @@ export class TextOutputAdapter {
   }
 }
 
-export class EasyInputLanAudioAdapter {
-  async getStatus() { return { connected: false, available: false, reason: "protocol-unconfirmed" }; }
-  async openStream() { throw new Error("EasyInput 局域网音频协议尚未确认"); }
-}
+export { EasyInputLanAudioAdapter } from "./easyInputLanAudioAdapter.js";
+import { EasyInputLanAudioAdapter } from "./easyInputLanAudioAdapter.js";
 
 export class DesktopBridgeAdapter {
   constructor(bridge = globalThis.window?.desktopBridge) { this.bridge = bridge; }
   async capabilities() { return this.bridge?.getCapabilities ? this.bridge.getCapabilities() : { supported: false, platform: "web" }; }
+  async networkSummary() { return this.bridge?.getNetworkSummary ? this.bridge.getNetworkSummary() : { available: Boolean(globalThis.navigator?.onLine), transports: [], lanAudio: "protocol-unconfirmed", sameLanPossible: Boolean(globalThis.navigator?.onLine) }; }
   async registerShortcut(shortcut) { return this.bridge?.registerShortcut ? this.bridge.registerShortcut(shortcut) : { registered: false, shortcut, reason: "desktop-bridge-unavailable" }; }
   async setVoiceRecording(recording) { return this.bridge?.setVoiceRecording ? this.bridge.setVoiceRecording(recording) : { ok: false, reason: "desktop-bridge-unavailable" }; }
   async setVoiceState(value) { return this.bridge?.setVoiceState ? this.bridge.setVoiceState(value) : { ok: false, reason: "desktop-bridge-unavailable" }; }

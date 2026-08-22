@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("desktopBridge", {
   getCapabilities: () => ipcRenderer.invoke("desktop:get-capabilities"),
+  getNetworkSummary: () => ipcRenderer.invoke("desktop:get-network-summary"),
   registerShortcut: (shortcut) => ipcRenderer.invoke("desktop:register-shortcut", shortcut),
   setTriggerConfig: (value) => ipcRenderer.invoke("desktop:set-trigger-config", value),
   setVoiceRecording: (recording) => ipcRenderer.invoke("desktop:set-voice-recording", Boolean(recording)),

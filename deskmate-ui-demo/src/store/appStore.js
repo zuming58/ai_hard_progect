@@ -1,6 +1,8 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
 import { expressionPresets, historyItems, keyActions } from "../appData.js";
 import { AI_EVENT_TYPES } from "../adapters/index.js";
+import { legacyState } from "../domain/aiStatus.js";
+import { mapAiStateToPetIntent } from "../domain/petIntent.js";
 
 export const STORAGE_KEY = "deskmate.app-state";
 export const SCHEMA_VERSION = 5;
@@ -29,6 +31,7 @@ export const defaultState = {
   motion: { preset: "attentive", speed: 45, range: 55 },
   sensors: { autoBrightness: true, faceTracking: false },
   aiEvent: { type: "working", agent: "Codex", progress: 68, detail: "正在整理桌宠开发文档" },
+  aiIntent: mapAiStateToPetIntent({ state: "working" }),
 };
 
 function mergeDefaults(value) {
@@ -45,6 +48,7 @@ function mergeDefaults(value) {
     sensors: { ...defaultState.sensors, ...(value.sensors || {}) },
     runtime: { ...defaultState.runtime, ...(value.runtime || {}), inputBridge: { ...defaultState.runtime.inputBridge, ...(value.runtime?.inputBridge || {}) } },
     aiEvent: { ...defaultState.aiEvent, ...(value.aiEvent || {}) },
+    aiIntent: value.aiIntent || defaultState.aiIntent,
   };
 }
 
@@ -125,7 +129,7 @@ export function reduceAppState(state, action) {
     const event = action.value;
     const agentExpression = event.type === "working" ? state.agentExpressionMapping[agentKey(event.agent)] : null;
     const expression = agentExpression || state.expressionMapping[event.type] || state.currentExpression;
-    return { ...state, aiEvent: event, currentExpression: expression };
+    return { ...state, aiEvent: event, aiIntent: mapAiStateToPetIntent({ state: legacyState(event.type) }), currentExpression: expression };
   }
   return state;
 }
