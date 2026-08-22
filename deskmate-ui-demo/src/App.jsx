@@ -90,7 +90,7 @@ function Sidebar({ current, navigate, collapsed, setCollapsed, mobileOpen, setMo
       <div className="device-card">
         <div className="device-card__screen"><img src={DEVICE_FACE_URL} alt="DeskMate 设备" /></div>
         <div className={`device-card__status ${boardConnected ? "" : "device-card__status--pending"}`}><span />{boardConnected ? "EasyInput 已连接" : "等待 EasyInput 板子"}</div>
-        <small>{boardConnected ? "USB HID · F22 监听就绪" : "请通过 USB 连接开发板"}</small>
+        <small>{boardConnected ? "USB HID · Ctrl+Shift+Space / F22 监听就绪" : "请通过 USB 连接开发板"}</small>
       </div>
     </aside>
   );

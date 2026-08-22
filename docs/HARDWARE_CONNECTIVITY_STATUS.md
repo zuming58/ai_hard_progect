@@ -1,13 +1,13 @@
 # DeskMate 与 EasyInput 真机联动状态
 
-更新时间：2026-08-21（Phase 3）
+更新时间：2026-08-22（Phase 3D 真机验收）
 
 ## 当前结论
 
 Phase 3 已完成软件实现和只读设备识别，当前链路为：
 
 ```text
-EasyInput F22 语音键 / Ctrl+Shift+Space / 页面按钮 / 系统托盘
+EasyInput Ctrl+Shift+Space 语音键 / F22 兼容路径 / 页面按钮 / 系统托盘
   → 同一个语音状态机
   → 电脑麦克风录音
   → 千问 qwen3-asr-flash
@@ -15,13 +15,13 @@ EasyInput F22 语音键 / Ctrl+Shift+Space / 页面按钮 / 系统托盘
   → 当前 Windows 输入框；失败时回退剪贴板
 ```
 
-本机自包含 Raw Input 桥已实际检测到 `VID 303A / PID 1006`，返回 `boardConnected: true`。这证明 USB 集线器连接和设备来源识别均正常；F22 的物理按压组合仍需用户在打包版中完成最终 10 次真机验收。
+本机自包含 Raw Input 桥已实际检测到 `VID 303A / PID 1006`，返回 `boardConnected: true`。只读诊断已捕获真实语音键发送的 `Ctrl + Shift + Space` 完整按下/释放序列；F22 仍保留为兼容路径。连续 10 次完整录音和异常矩阵仍需在打包版中完成。
 
 ## 已实现
 
 - Electron 安全桌面壳、系统托盘和不抢焦点的录音状态悬浮窗。
 - 自包含 .NET 8 Windows Raw Input 辅助进程，用户无需另装运行库。
-- 只识别来自 `VID 303A / PID 1006` 的 F22；不读取文字、序列号或完整设备路径，不向 HID 写数据。
+- 只识别来自 `VID 303A / PID 1006` 的 F22 兼容事件；当前真机语音键由 Electron 全局 `Ctrl+Shift+Space` 快捷键入口接收；不读取文字、序列号或完整设备路径，不向 HID 写数据。
 - F22 只在释放时触发，带 350ms 防抖、重复按下过滤、断线复位和辅助进程自动重启。
 - `Ctrl+Shift+Space` 备用快捷键；右 Alt 为可选兼容开关，默认关闭。
 - `Esc` 取消当前录音或转写。
@@ -40,7 +40,8 @@ EasyInput F22 语音键 / Ctrl+Shift+Space / 页面按钮 / 系统托盘
 | 链路 | 状态 | 说明 |
 |---|---|---|
 | EasyInput USB/HID | 真机已识别 | `VID 303A / PID 1006`，桥返回已连接 |
-| F22 → DeskMate | 已实现，待物理按压验收 | 来源可区分为 `easyinput-hid` |
+| Ctrl+Shift+Space → DeskMate | 真机已捕获 | 来源为 `fallback-shortcut`，与页面按钮共用语音状态机 |
+| F22 → DeskMate | 已实现，待其他固件/型号验收 | 来源可区分为 `easyinput-hid` |
 | 标准编辑按键 | Windows 原生可用 | 不拦截、不重发 |
 | 电脑麦克风 | 已实现 | Phase 3 固定使用 |
 | 千问 STT | 已实现 | API Key 由 Windows 当前用户加密保存 |
