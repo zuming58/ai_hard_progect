@@ -47,10 +47,13 @@ function parseResponse(data) {
   };
 }
 
-async function transcribe({ apiKey, workspaceId = "", audio, mimeType, fetchImpl = globalThis.fetch, timeoutMs = 60000 }) {
+async function transcribe({ apiKey, workspaceId = "", audio, mimeType, fetchImpl = globalThis.fetch, timeoutMs = 60000, signal }) {
   const key = validateApiKey(apiKey);
   if (typeof fetchImpl !== "function") throw new Error("当前运行环境不支持千问 ASR 请求");
   const controller = new AbortController();
+  const cancel = () => controller.abort("cancelled");
+  if (signal?.aborted) cancel();
+  else signal?.addEventListener("abort", cancel, { once: true });
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetchImpl(endpointForWorkspace(workspaceId), {
@@ -67,10 +70,11 @@ async function transcribe({ apiKey, workspaceId = "", audio, mimeType, fetchImpl
     }
     return parseResponse(data);
   } catch (error) {
-    if (controller.signal.aborted) throw new Error("千问 ASR 请求超时");
+    if (controller.signal.aborted) throw new Error(signal?.aborted ? "千问 ASR 转写已取消" : "千问 ASR 请求超时");
     throw error;
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", cancel);
   }
 }
 

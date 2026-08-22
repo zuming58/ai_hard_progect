@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   IconAdjustmentsHorizontal as AdjustmentsHorizontal,
   IconAlertCircle as AlertCircle,
@@ -51,6 +51,7 @@ import { voiceAdapters } from "./adapters/voiceAdapters.js";
 import { BailianSttAdapter, ConfigurableTextOrganizer, HttpSttAdapter, MockSttAdapter } from "./adapters/sttAdapters.js";
 import { DeviceSimulator } from "./adapters/deviceSimulator.js";
 import { deviceEventBus } from "./domain/deviceEvents.js";
+import { initialVoiceSession, voiceSessionReducer } from "./domain/voiceSession.js";
 import { createDiagnosticReport } from "./services/diagnostics.js";
 import { processVoiceRecording } from "./services/voicePipeline.js";
 import {
@@ -160,10 +161,19 @@ export function VoicePage({ notify }) {
   const [desktopCaps, setDesktopCaps] = useState({ supported: false, shortcutRegistered: false });
   const [lastDeviceEvent, setLastDeviceEvent] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [realtimeStatus, setRealtimeStatus] = useState("idle");
+  const [session, dispatchSession] = useReducer(voiceSessionReducer, initialVoiceSession);
   const toggleRef = useRef(() => {});
+  const cancelRef = useRef(() => {});
   const simulatorRef = useRef(new DeviceSimulator(deviceEventBus));
   const sttAbortRef = useRef(null);
+  const realtimeSessionRef = useRef("");
+  const realtimeAttemptRef = useRef(0);
+  const realtimeWantedRef = useRef(false);
+  const pendingRealtimeAudioRef = useRef([]);
   const handleComplete = useCallback(async (item) => {
+    dispatchSession({ type: "transition", state: "transcribing", detail: { message: "正在发送到千问语音识别" } });
     const id = globalThis.crypto?.randomUUID?.() || `recording-${Date.now()}`;
     let audioId;
     if (item.blob) {
@@ -178,18 +188,122 @@ export function VoicePage({ notify }) {
     setRecordingItem({ ...item, id, audioId });
     const controller = new AbortController(); sttAbortRef.current = controller; setProcessing(true);
     const mode = state.settings.activeWindowOutputEnabled ? "active-window" : state.settings.outputMode;
-    const processed = await processVoiceRecording({ blob: item.blob, stt, organizer: new ConfigurableTextOrganizer(), organizerOptions: { mode: state.settings.formatting, rules: state.vocabulary.rules, customRule: state.settings.customOrganizerRule }, signal: controller.signal, output: voiceAdapters.output, outputMode: mode, saveHistory: async ({ text, transcript: result }) => { const entry = { id, audioId, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), date: "今天", duration: `${item.duration} 秒`, count: result.status === "success" ? `${text.length} 字` : "待转写", text }; patch({ history: [entry, ...state.history], diagnostics: { ...(state.diagnostics || {}), stt: { provider: result.provider, status: result.status, durationMs: result.durationMs, errorType: result.status === "error" ? result.message : "" } } }); return entry; } });
-    sttAbortRef.current = null; setProcessing(false); setTranscript(processed.text);
-    if (processed.transcript.status === "success") notify(processed.output.ok ? `转写完成，已输出到${mode === "history" ? "历史" : mode === "clipboard" ? "剪贴板" : "当前窗口"}` : "转写已保存到历史，但文字输出失败");
-    else notify(processed.transcript.status === "cancelled" ? "转写已取消，录音仍保存在历史中" : audioId ? "录音已保存，等待转写服务" : "录音已完成，等待转写服务");
+    try {
+      const processed = await processVoiceRecording({ blob: item.blob, stt, organizer: new ConfigurableTextOrganizer(), organizerOptions: { mode: state.settings.formatting, rules: state.vocabulary.rules, customRule: state.settings.customOrganizerRule }, signal: controller.signal, output: voiceAdapters.output, outputMode: mode, onPhase: (phase) => { if (phase === "outputting") dispatchSession({ type: "transition", state: "outputting", detail: { message: "正在写入目标窗口" } }); }, saveHistory: async ({ text, transcript: result }) => { const entry = { id, audioId, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), date: "今天", duration: `${item.duration} 秒`, count: result.status === "success" ? `${text.length} 字` : "待转写", text }; patch({ history: [entry, ...state.history], diagnostics: { ...(state.diagnostics || {}), stt: { provider: result.provider, status: result.status, durationMs: result.durationMs, errorType: result.status === "error" ? result.message : "" } } }); return entry; } });
+      setTranscript(processed.text);
+      if (processed.transcript.status === "success") {
+        if (processed.output.ok) {
+          dispatchSession({ type: "transition", state: "completed", detail: { message: processed.output.fallbackFrom ? "目标窗口已变化，文字已复制到剪贴板" : "转写和文字输出均已完成" } });
+          notify(processed.output.fallbackFrom ? "目标窗口已变化，转写已保存并复制到剪贴板" : `转写完成，已输出到${processed.output.mode === "history" ? "历史" : processed.output.mode === "clipboard" ? "剪贴板" : "当前窗口"}`);
+        } else {
+          dispatchSession({ type: "transition", state: "error", detail: { message: "转写已保存，但文字输出失败" } });
+          notify("转写已保存到历史，但文字输出失败");
+        }
+      } else if (processed.transcript.status === "cancelled") {
+        dispatchSession({ type: "reset" });
+        notify("转写已取消，录音仍保存在历史中");
+      } else {
+        dispatchSession({ type: "transition", state: "error", detail: { message: processed.transcript.message || "语音识别失败" } });
+        notify(audioId ? "录音已保存，但语音识别未完成" : "录音已完成，但语音识别未完成");
+      }
+    } catch (cause) {
+      dispatchSession({ type: "transition", state: "error", detail: { message: cause.message || "语音处理失败" } });
+      notify(`语音处理失败：${cause.message || "未知错误"}`);
+    } finally {
+      sttAbortRef.current = null;
+      setProcessing(false);
+    }
   }, [notify, patch, state.history, state.settings]);
-  const { status, seconds, level, error, stop, toggle, cancel } = useRecorder({ deviceId: source || undefined, onComplete: handleComplete, onError: notify });
+  const appendRealtimeAudio = useCallback((audio) => {
+    const sessionId = realtimeSessionRef.current;
+    if (!sessionId) {
+      if (realtimeWantedRef.current && pendingRealtimeAudioRef.current.length < 24) pendingRealtimeAudioRef.current.push(audio);
+      return;
+    }
+    if (typeof globalThis.desktopBridge?.appendBailianRealtime !== "function") return;
+    globalThis.desktopBridge.appendBailianRealtime({ sessionId, audio }).catch(() => {});
+  }, []);
+  const { status, seconds, level, error, stop, toggle, cancel } = useRecorder({ deviceId: source || undefined, onComplete: handleComplete, onAudioChunk: appendRealtimeAudio, onError: (message) => { dispatchSession({ type: "transition", state: "error", detail: { message } }); notify(message); } });
   const recording = status === "recording";
   const processingRef = useRef(processing); processingRef.current = processing;
-  toggleRef.current = () => processingRef.current ? Promise.resolve({ ignored: true, reason: "processing" }) : toggle();
+  const beginRealtimePreview = () => {
+    const attempt = ++realtimeAttemptRef.current;
+    realtimeWantedRef.current = true;
+    pendingRealtimeAudioRef.current = [];
+    setRealtimeStatus("connecting");
+    if (state.settings.sttMode !== "bailian" || typeof globalThis.desktopBridge?.startBailianRealtime !== "function") {
+      setRealtimeStatus("unavailable");
+      return;
+    }
+    globalThis.desktopBridge.startBailianRealtime().then((realtime) => {
+      const sessionId = realtime?.sessionId || "";
+      if (attempt !== realtimeAttemptRef.current || !realtimeWantedRef.current) {
+        if (sessionId) globalThis.desktopBridge?.cancelBailianRealtime?.(sessionId).catch(() => {});
+        return;
+      }
+      realtimeSessionRef.current = sessionId;
+      setRealtimeStatus(realtime?.ok ? "ready" : "unavailable");
+      if (!sessionId) return;
+      const pending = pendingRealtimeAudioRef.current.splice(0);
+      pending.forEach((audio) => globalThis.desktopBridge?.appendBailianRealtime?.({ sessionId, audio }).catch(() => {}));
+    }).catch(() => {
+      if (attempt === realtimeAttemptRef.current) setRealtimeStatus("unavailable");
+    });
+  };
+  const invalidateRealtimeStart = () => {
+    realtimeWantedRef.current = false;
+    realtimeAttemptRef.current += 1;
+    pendingRealtimeAudioRef.current = [];
+  };
+  toggleRef.current = async () => {
+    if (processingRef.current) return { ignored: true, reason: "processing" };
+    const starting = status !== "recording";
+    if (starting) {
+      setLiveTranscript("");
+      dispatchSession({ type: "transition", state: "recording", detail: { message: "正在使用电脑麦克风录音" } });
+      beginRealtimePreview();
+    }
+    const result = await toggle();
+    if (result.action === "start" && !result.started) {
+      invalidateRealtimeStart();
+      if (realtimeSessionRef.current) globalThis.desktopBridge?.cancelBailianRealtime?.(realtimeSessionRef.current).catch(() => {});
+      realtimeSessionRef.current = "";
+    }
+    if (result.ignored && starting) {
+      invalidateRealtimeStart();
+      dispatchSession({ type: "reset" });
+    }
+    if (result.action === "stop") {
+      invalidateRealtimeStart();
+      if (realtimeSessionRef.current) globalThis.desktopBridge?.finishBailianRealtime?.(realtimeSessionRef.current).catch(() => {});
+    }
+    return result;
+  };
+  cancelRef.current = () => {
+    sttAbortRef.current?.abort();
+    invalidateRealtimeStart();
+    if (realtimeSessionRef.current) globalThis.desktopBridge?.cancelBailianRealtime?.(realtimeSessionRef.current).catch(() => {});
+    realtimeSessionRef.current = "";
+    cancel();
+    setProcessing(false);
+    dispatchSession({ type: "reset" });
+    voiceAdapters.desktop.setVoiceState({ state: "cancelled", message: "已取消当前语音输入", floating: state.settings.floating }).catch(() => {});
+  };
   const recordingRef = useRef(recording); recordingRef.current = recording;
-  useEffect(() => deviceEventBus.subscribe((event) => { setLastDeviceEvent(event); if (event.type === "voice-toggle") toggleRef.current(); if (event.type === "connection-change" && !event.payload.connected && recordingRef.current) { stop(); notify("模拟设备已断线，当前录音已停止并保留"); } }), [notify, stop]);
+  useEffect(() => globalThis.desktopBridge?.onBailianRealtimeEvent?.((event) => {
+    if (!event || event.sessionId !== realtimeSessionRef.current) return;
+    if (["preview", "completed"].includes(event.kind)) {
+      setLiveTranscript(String(event.preview || event.text || ""));
+      setRealtimeStatus("receiving");
+    } else if (event.kind === "error") setRealtimeStatus("unavailable");
+    else if (event.kind === "ready") setRealtimeStatus("ready");
+    else if (["finished", "closed"].includes(event.kind)) setRealtimeStatus("finished");
+  }), []);
+  useEffect(() => deviceEventBus.subscribe((event) => { setLastDeviceEvent(event); if (event.type === "voice-toggle") toggleRef.current(); if (event.type === "voice-cancel") cancelRef.current(); if (event.type === "connection-change" && !event.payload.connected && recordingRef.current) { stop(); notify("EasyInput 已断线，当前录音已安全停止并保留"); } }), [notify, stop]);
   useEffect(() => { voiceAdapters.desktop.setVoiceRecording(recording).catch(() => {}); }, [recording]);
+  useEffect(() => {
+    voiceAdapters.desktop.setVoiceState({ state: session.state, message: session.message, transcript: session.state === "recording" ? liveTranscript : "", seconds, level, floating: state.settings.floating }).catch(() => {});
+  }, [level, liveTranscript, seconds, session.message, session.state, state.settings.floating]);
   useEffect(() => { voiceAdapters.desktop.capabilities().then(setDesktopCaps).catch(() => setDesktopCaps({ supported: false, shortcutRegistered: false })); }, [state.settings.voiceShortcut]);
   useEffect(() => {
     if (!recordingItem?.blob) { setRecordingUrl(""); return undefined; }
@@ -222,17 +336,17 @@ export function VoicePage({ notify }) {
             {Array.from({ length: 42 }).map((_, index) => <span key={index} style={{ "--height": `${recording ? Math.max(8, level * (0.35 + ((index % 5) / 10))) : 8 + ((index * 7) % 14)}px`, "--delay": `${index * -0.04}s` }} />)}
           </div>
           <div className="recorder__time">{time}</div>
-          <p className="recorder__transcript">{transcript || (recording ? "正在采集音频…" : "按下按钮或使用快捷键开始录音")}</p>
+          <p className="recorder__transcript">{recording ? (liveTranscript || (realtimeStatus === "unavailable" ? "正在采集音频；录音结束后显示完整文字" : level > 2 ? "已检测到声音，正在实时识别…" : "等待你开始说话…")) : transcript || "按下按钮或使用快捷键开始录音"}</p>
           <Button icon={recording ? PlayerPause : Microphone2} variant={recording ? "danger" : "primary"} onClick={toggleRef.current} disabled={processing}>{recording ? "停止录音" : "开始录音"}</Button>
-          {recording && <Button variant="ghost" onClick={cancel}>取消</Button>}
-          {processing && <Button variant="ghost" onClick={() => sttAbortRef.current?.abort()}>取消转写</Button>}
+          {recording && <Button variant="ghost" onClick={cancelRef.current}>取消</Button>}
+          {processing && <Button variant="ghost" onClick={cancelRef.current}>取消转写</Button>}
           {recordingUrl && <audio controls src={recordingUrl} />}
           {error && <Notice tone="warning" title="麦克风不可用">{error}</Notice>}
         </div>
       <div className="voice-statusbar"><span>状态 · {recording ? "正在录音" : processing ? "正在转写" : status === "error" ? "不可用" : status === "completed" ? "录音完成" : "准备就绪"}</span><span>音量 · {level}%</span><span>悬浮窗 · {state.settings.floating ? "已开启" : "已关闭"}</span></div>
       </Card>
       <div className="two-column compact-panels">
-        <Card><SectionTitle index="02" title="输出方式" /><SettingRow title="智能整理" description="移除口头语并按语义分段"><Toggle checked onChange={() => notify("将在下一次录音时生效")} /></SettingRow></Card>
+        <Card><SectionTitle index="02" title="输出方式" /><SettingRow title="文字整理" description={state.settings.formatting === "raw" ? "当前使用原样输出；智能整理将在 Phase 3B 接入" : "整理服务尚未接入，当前会安全退回原样输出"}><StatusBadge tone={state.settings.formatting === "raw" ? "success" : "demo"}>{state.settings.formatting === "raw" ? "原样输出" : "待接入"}</StatusBadge></SettingRow></Card>
         <Card><SectionTitle index="03" title="录音设备" /><SettingRow title={source ? (devices.find((device) => device.deviceId === source)?.label || "已选择麦克风") : "系统默认麦克风"} description="录音过程中不会自动切换"><StatusBadge tone="success">可用</StatusBadge></SettingRow></Card>
       </div>
     </div>
@@ -322,9 +436,9 @@ export function KeymapPage({ notify }) {
   return (
     <div className="page">
       <PageIntro title="按键配置" description="配置键盘按键、旋钮和快捷动作" actions={<><StatusBadge tone="demo">本机配置 · 未同步</StatusBadge><Button icon={Send} variant="primary" onClick={() => notify("已保存到本机；板子同步协议尚未接入")}>保存配置</Button></>} />
-      <Notice tone="demo" title="板子同步待接入">按键映射现在会保存在本机，但还不会写回 EasyInput 板子。板子的 HID 按键输入与配置写回是两条不同链路。</Notice>
-      <SettingRow title="按键诊断模式" description="只记录键名、修饰键和时间，不记录输入内容；不能证明事件来自哪块键盘"><Toggle checked={state.settings.keyDiagnosticsEnabled} onChange={(value) => patch({ settings: { ...state.settings, keyDiagnosticsEnabled: value } })} /></SettingRow>
-      {diagnostics.length > 0 && <Card><div className="history-list">{diagnostics.map((item, index) => <div className="history-item" key={`${item.at}-${index}`}><time>{item.at}</time><div><p>{item.key} / {item.code}</p><small>{item.source} · {[item.control && "Ctrl", item.shift && "Shift", item.alt && "Alt", item.meta && "Meta"].filter(Boolean).join(" + ") || "无修饰键"}</small></div></div>)}</div></Card>}
+      <Notice tone="demo" title="标准按键已由 Windows 直接执行">板子发送的回车、退格、全选、复制、粘贴和撤销属于标准 HID 功能，无需软件重发。这里修改的映射会保存到本机；写回板子仍需确认厂商配置协议。</Notice>
+      <SettingRow title="按键诊断模式" description="只记录 F22 / 右 Alt 的来源类别、按下释放和时间；不记录普通输入、文字或设备路径"><Toggle checked={state.settings.keyDiagnosticsEnabled} onChange={(value) => patch({ settings: { ...state.settings, keyDiagnosticsEnabled: value } })} /></SettingRow>
+      {diagnostics.length > 0 && <Card><div className="history-list">{diagnostics.map((item, index) => <div className="history-item" key={`${item.at}-${index}`}><time>{item.at}</time><div><p>{item.key || "语音触发"} · {item.action || "切换"}</p><small>{item.source}</small></div></div>)}</div></Card>}
       <div className="keymap-grid">
         <Card className="keymap-board">
           <div className="device-line"><span>当前电脑 <strong>Windows</strong></span><span>键盘系统 <strong>尚未读取</strong></span><span>同步结果 <strong className="success-text">UI 已就绪</strong></span></div>
@@ -354,17 +468,22 @@ export function ConnectionsPage({ notify }) {
   const [wifiName, setWifiName] = useState("");
   const [transportCaps, setTransportCaps] = useState(null);
   const [desktopCaps, setDesktopCaps] = useState({ supported: false });
+  const [lastTrigger, setLastTrigger] = useState(null);
   useEffect(() => { mockAdapters.device.discoverTransports().then(setTransportCaps).catch(() => setTransportCaps({})); }, []);
   useEffect(() => { voiceAdapters.desktop.capabilities().then(setDesktopCaps).catch(() => setDesktopCaps({ supported: false, shortcutRegistered: false })); }, [state.settings.voiceShortcut]);
+  useEffect(() => deviceEventBus.subscribe((event) => { if (event.type === "voice-toggle" || event.type === "key-diagnostic") setLastTrigger({ source: event.source, key: event.payload.key || event.payload.shortcut || "", at: event.at }); }), []);
+  const bridge = state.runtime?.inputBridge || desktopCaps.inputBridge || {};
+  const qwenReady = state.settings.sttMode === "bailian";
+  const outputReady = state.settings.outputMode === "history" || desktopCaps.supported;
   return (
     <div className="page">
       <PageIntro title="设备与连接" description="检查板子触发、麦克风音频、转写和文字输出链路" actions={<Button icon={Refresh} onClick={() => notify("已刷新浏览器能力；系统设备检测需要桌面桥")}>刷新能力</Button>} />
       <Segmented value={tab} onChange={setTab} options={[{ value: "overview", label: "连接概览" }, { value: "microphone", label: "麦克风" }, { value: "network", label: "Wi-Fi 与蓝牙" }, { value: "sound", label: "提示音" }]} />
-      {tab === "overview" && <><Notice tone="warning" title="板子到软件的业务链路尚未接通">Windows 已识别 EasyInput 的 USB HID 键盘接口；但当前 Web 版还不能监听系统级按键，也没有接入板子通过 Wi-Fi 发送的麦克风音频。下一阶段要打通“按板子 → 开始/结束录音 → 转写 → 历史与当前输入框出现文字”。</Notice><div className="connection-cards">
-        <Card interactive><div className="connection-icon"><Link size={28} /></div><div><strong>板子按键触发</strong><p>VID 303A / PID 1006 已被 Windows 识别；事件来源仍无法区分键盘</p></div><StatusBadge tone={desktopCaps.shortcutRegistered ? "success" : "demo"}>{desktopCaps.shortcutRegistered ? `全局快捷键 · ${desktopCaps.shortcut}` : "桌面桥待接入"}</StatusBadge></Card>
-        <Card interactive><div className="connection-icon"><Microphone2 size={28} /></div><div><strong>板子麦克风音频</strong><p>Windows 未见独立音频端点，需验证 2.4GHz Wi-Fi 流</p></div><StatusBadge tone="warning">协议待验证</StatusBadge></Card>
-        <Card interactive><div className="connection-icon"><Brain size={28} /></div><div><strong>语音转文字</strong><p>录音与本地保存已完成，STT 服务待接入</p></div><StatusBadge tone="demo">待接入</StatusBadge></Card>
-        <Card interactive><div className="connection-icon"><Copy size={28} /></div><div><strong>文字输出</strong><p>历史记录与本地复制链路已具备</p></div><StatusBadge tone="success">软件侧就绪</StatusBadge></Card>
+      {tab === "overview" && <><Notice tone={bridge.boardConnected ? "success" : "warning"} title={bridge.boardConnected ? "EasyInput 真机语音桥已连接" : "等待 EasyInput USB 设备"}>{bridge.boardConnected ? "板子 F22 语音键会调用与页面按钮完全相同的录音控制器。回车、退格、全选、复制、粘贴和撤销继续由 Windows 标准 HID 直接执行。" : "连接开发板后，Raw Input 桥只读识别 VID 303A / PID 1006 的 F22；不会读取文字、序列号，也不会向板子写数据。"}</Notice><div className="connection-cards">
+        <Card interactive><div className="connection-icon"><Link size={28} /></div><div><strong>EasyInput HID</strong><p>{lastTrigger ? `最后触发：${lastTrigger.key || "语音切换"} · ${lastTrigger.source}` : "监听板子 F22；标准编辑键由 Windows 直接处理"}</p></div><StatusBadge tone={bridge.boardConnected ? "success" : "demo"}>{bridge.boardConnected ? "已连接" : bridge.process === "running" ? "监听中" : "桥未运行"}</StatusBadge></Card>
+        <Card interactive><div className="connection-icon"><Microphone2 size={28} /></div><div><strong>电脑麦克风</strong><p>Phase 3 固定使用电脑麦克风；板载 Wi-Fi 音频不作伪连接</p></div><StatusBadge tone="success">录音就绪</StatusBadge></Card>
+        <Card interactive><div className="connection-icon"><Brain size={28} /></div><div><strong>千问语音识别</strong><p>停止录音后调用 qwen3-asr-flash</p></div><StatusBadge tone={qwenReady ? "success" : "demo"}>{qwenReady ? "已启用" : "待配置"}</StatusBadge></Card>
+        <Card interactive><div className="connection-icon"><Copy size={28} /></div><div><strong>文字输出</strong><p>先保存历史，再写入原窗口；失败时自动回退剪贴板</p></div><StatusBadge tone={outputReady ? "success" : "demo"}>{outputReady ? "就绪" : "Web 仅历史"}</StatusBadge></Card>
       </div><Card className="transport-readiness"><SectionTitle index="02" title="浏览器通信能力" description="这里只表示当前浏览器支持哪些接口，不代表硬件已经连接。" /><div className="chips">{transportCaps ? Object.entries(transportCaps).map(([name, supported]) => <span className={`chip chip--status ${supported ? "is-supported" : ""}`} key={name}>{name} · {supported ? "可用" : "不可用"}</span>) : <span>正在检测…</span>}</div></Card></>}
       {tab === "microphone" && <Card><SectionTitle index="01" title="麦克风来源" description="录音开始后不会中途切换。" /><Segmented value={mic} onChange={setMic} options={[{ value: "computer", label: "电脑优先" }, { value: "keyboard", label: "键盘优先" }]} /><Notice tone={mic === "computer" ? "success" : "warning"} title={mic === "computer" ? "电脑麦克风可用" : "键盘麦克风待接入"}>{mic === "computer" ? "当前可直接使用浏览器授权的电脑麦克风录音。" : "这个选择目前只保存偏好；需要先确认原 EasyInput 的局域网音频协议，才能真正接收板子麦克风。"}</Notice></Card>}
       {tab === "network" && <div className="two-column"><Card><SectionTitle index="01" title="网络与连接" description="键盘仅支持 2.4GHz Wi-Fi。" /><Notice tone="warning" title="配网尚未完成">电脑和键盘需要处于同一路由器网络。</Notice><label className="field-label">Wi-Fi 名称<input value={wifiName} onChange={(e) => setWifiName(e.target.value)} placeholder="自动获取或手动输入" /></label><label className="field-label">Wi-Fi 密码<input type="password" placeholder="开放网络可留空" /></label><Button icon={Send} variant="primary" onClick={() => notify(wifiName ? "网络配置已保存到 Demo" : "请先填写 Wi-Fi 名称")}>补全后同步</Button></Card><Card><SectionTitle index="02" title="蓝牙功能" /><SettingRow icon={Bluetooth} title="蓝牙 HID 输入" description="用于按键和旋钮，不用于传输麦克风音频"><Toggle checked onChange={() => notify("蓝牙状态为 Demo")}/></SettingRow><Notice tone="info" title="为什么麦克风需要 Wi-Fi？">蓝牙 HID 适合传输按键事件，不适合这套方案的实时音频数据；键盘麦克风通过局域网把音频流发送给电脑。</Notice></Card></div>}
@@ -506,14 +625,15 @@ export function SettingsPage({ notify }) {
   const downloadConfig = () => { const blob = new Blob([exportConfig()], { type: "application/json" }); const link = document.createElement("a"); const url = URL.createObjectURL(blob); link.href = url; link.download = "deskmate-config.json"; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0); notify("配置 JSON 已导出"); };
   const importConfig = (event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { replace(JSON.parse(reader.result)); notify("配置已导入"); } catch (error) { notify(`导入失败：${error.message}`); } }; reader.readAsText(file); event.target.value = ""; };
   const sttDiagnostic = state.settings.sttMode === "bailian" ? { label: "千问 ASR", value: bailianStatus.configured ? "已配置" : "缺少密钥", tone: bailianStatus.configured ? "success" : "demo" } : state.settings.sttMode === "mock" ? { label: "Mock STT", value: "模拟", tone: "demo" } : state.settings.sttMode === "http" ? { label: "HTTP STT 端点", value: "待验证", tone: "demo" } : { label: "语音转写服务", value: "未配置", tone: "demo" };
-  const diagnosticItems = [{ label: "设备模拟器", value: state.settings.simulatorEnabled ? "模拟" : "未启用", tone: "demo" }, { label: "电脑麦克风录音", value: "可用", tone: "success" }, sttDiagnostic, { label: "局域网音频协议", value: "待接入", tone: "demo" }, { label: "真实 EasyInput 事件", value: "待接入", tone: "demo" }];
+  const inputBridge = state.runtime?.inputBridge || {};
+  const diagnosticItems = [{ label: "Windows 输入桥", value: inputBridge.process === "running" ? "运行中" : inputBridge.process || "未知", tone: inputBridge.process === "running" ? "success" : "demo" }, { label: "EasyInput HID", value: inputBridge.boardConnected ? "已连接" : "未连接", tone: inputBridge.boardConnected ? "success" : "demo" }, { label: "电脑麦克风录音", value: "可用", tone: "success" }, sttDiagnostic, { label: "文字输出", value: state.settings.activeWindowOutputEnabled ? "原窗口 + 剪贴板回退" : state.settings.outputMode === "clipboard" ? "剪贴板" : "历史", tone: "success" }, { label: "板载局域网音频", value: "协议未确认", tone: "demo" }];
   return (
     <div className="page">
       <PageIntro title="设置与诊断" description="管理快捷键、输入方式、外观和系统诊断" actions={<><Button icon={Upload} onClick={() => document.getElementById("config-import").click()}>导入配置</Button><input id="config-import" type="file" accept="application/json" hidden onChange={importConfig} /><Button icon={Download} onClick={downloadConfig}>导出配置</Button><Button icon={Refresh} onClick={() => { reset(); notify("设置已恢复为默认值"); }}>恢复默认</Button></>} />
       <div className="settings-layout">
         <Card className="settings-nav">{[{ id: "input", icon: Keyboard, label: "输入与快捷键" }, { id: "format", icon: Book2, label: "文字整理" }, { id: "appearance", icon: Sun, label: "外观与悬浮窗" }, { id: "account", icon: User, label: "账户" }, { id: "diagnostics", icon: Gauge, label: "系统诊断" }].map((item) => <button className={section === item.id ? "is-active" : ""} onClick={() => setSection(item.id)} key={item.id}><item.icon size={19} /><span>{item.label}</span><ArrowRight size={16} /></button>)}</Card>
         <Card className="settings-panel">
-          {section === "input" && <><SectionTitle index="01" title="快捷键" /><SettingRow title="语音输入快捷键" description="修改停止 450ms 后尝试注册；无效或冲突时保留原快捷键"><input value={state.settings.voiceShortcut} onChange={(event) => updateSettings({ voiceShortcut: event.target.value })} aria-label="全局语音快捷键" /></SettingRow><SettingRow title="语音编辑快捷键" description="选中文字后说出修改要求"><div className="key-sequence"><Keycap>Ctrl</Keycap><Keycap>Shift</Keycap><Keycap>E</Keycap></div></SettingRow><SettingRow title="快捷键操作方式" description="当前安全实现仅支持按一下开始、再按一下结束"><StatusBadge tone="demo">切换模式</StatusBadge></SettingRow><SettingRow title="转写后文字输出" description="转写服务接入后使用；失败时仍保留历史记录"><Segmented compact value={state.settings.outputMode} onChange={(value) => updateSettings({ outputMode: value })} options={[{ value: "history", label: "仅历史" }, { value: "clipboard", label: "复制" }]} /></SettingRow><SettingRow title="写入原输入窗口" description="仅全局快捷键触发可用；焦点窗口变化时会阻止粘贴"><Toggle checked={state.settings.activeWindowOutputEnabled} onChange={(value) => updateSettings({ activeWindowOutputEnabled: value })} /></SettingRow></>}
+          {section === "input" && <><SectionTitle index="01" title="快捷键" /><SettingRow title="EasyInput F22 语音键" description="仅识别 VID 303A / PID 1006；在按键释放时切换录音，不拦截其他标准按键"><Toggle checked={state.settings.boardF22Enabled} onChange={(value) => updateSettings({ boardF22Enabled: value })} /></SettingRow><SettingRow title="备用语音快捷键" description="无效或冲突时保留原快捷键；默认 Ctrl+Shift+Space"><input value={state.settings.voiceShortcut} onChange={(event) => updateSettings({ voiceShortcut: event.target.value })} aria-label="全局语音快捷键" /></SettingRow><SettingRow title="右 Alt 触发" description="可兼容旧方案，但可能影响 AltGr 和正常输入，因此默认关闭"><Toggle checked={state.settings.rightAltEnabled} onChange={(value) => updateSettings({ rightAltEnabled: value })} /></SettingRow>{state.settings.rightAltEnabled && <Notice tone="warning" title="右 Alt 已启用">Raw Input 桥不会吞掉右 Alt；部分应用仍可能把它当作 AltGr。若输入异常，请关闭此选项。</Notice>}<SettingRow title="快捷键操作方式" description="按一下开始，再按一下结束；只在释放事件触发并带 350ms 防抖"><StatusBadge tone="success">切换模式</StatusBadge></SettingRow><SettingRow title="转写后文字输出" description="无论输出成功与否，都会先保存历史记录"><Segmented compact value={state.settings.outputMode} onChange={(value) => updateSettings({ outputMode: value })} options={[{ value: "history", label: "仅历史" }, { value: "clipboard", label: "复制" }]} /></SettingRow><SettingRow title="写入原输入窗口" description="目标窗口改变或自动输入失败时会回退到剪贴板"><Toggle checked={state.settings.activeWindowOutputEnabled} onChange={(value) => updateSettings({ activeWindowOutputEnabled: value })} /></SettingRow></>}
           {section === "format" && <><SectionTitle index="02" title="文字整理" /><SettingRow title="整理方式" description="智能或自定义服务不可用时安全退回原样输出"><Segmented value={format} onChange={(value) => updateSettings({ formatting: value })} options={[{ value: "raw", label: "原样输出" }, { value: "smart", label: "智能整理" }, { value: "custom", label: "自定义" }]} /></SettingRow>{format === "custom" && <label className="field-label">本地自定义规则<input value={state.settings.customOrganizerRule} onChange={(event) => updateSettings({ customOrganizerRule: event.target.value })} placeholder="描述整理要求；为空时退回原样输出" /></label>}<SettingRow title="HTTP STT 端点" description="启用后录音会发送到该服务；仅允许 HTTPS，本机服务可使用 HTTP localhost；不要填写带 Token 的 URL"><input value={state.settings.sttEndpoint} onChange={(event) => updateSettings({ sttEndpoint: event.target.value, sttMode: event.target.value ? "http" : "unconfigured" })} placeholder="https://example.invalid/stt" /></SettingRow><Notice tone="success" title="当前规则">{format === "raw" ? "保留识别结果，只应用词库纠错。" : format === "smart" ? "整理服务未配置时自动保留原始转写。" : state.settings.customOrganizerRule ? "使用本地自定义规则；服务不可用时保留原始转写。" : "尚未填写自定义规则，将退回原样输出。"}</Notice></>}
           {section === "appearance" && <><SectionTitle index="03" title="外观与悬浮窗" /><SettingRow title="外观" description="跟随系统外观，或手动固定亮色 / 暗色"><Segmented value={theme} onChange={(value) => updateSettings({ theme: value })} options={[{ value: "system", label: "跟随系统" }, { value: "light", label: "亮色" }, { value: "dark", label: "暗色" }]} /></SettingRow><SettingRow title="悬浮窗显示" description="录音时显示状态和实时识别文字"><Toggle checked={floating} onChange={(value) => updateSettings({ floating: value })} /></SettingRow><SettingRow title="背景不透明度" description="数值越高，悬浮窗背景越实"><Slider label="背景不透明度" value={state.settings.backgroundOpacity} onChange={(value) => updateSettings({ backgroundOpacity: value })} /></SettingRow></>}
           {section === "account" && <><SectionTitle index="04" title="千问语音识别" /><div className="account-card"><span className="avatar"><Lock size={28} /></span><div><strong>阿里云百炼 · qwen3-asr-flash</strong><p>API Key 只在 Electron 主进程中使用，并由 Windows 当前用户加密保存；不会进入配置导出或 Git。</p></div><StatusBadge tone={bailianStatus.configured ? "success" : "demo"}>{bailianStatus.configured ? "已配置" : "未配置"}</StatusBadge></div><label className="field-label">百炼 API Key<span className="secret-field"><input type={showBailianKey ? "text" : "password"} autoComplete="off" value={bailianKey} onChange={(event) => setBailianKey(event.target.value)} placeholder={bailianStatus.configured ? "已加密保存；输入新 Key 可替换" : "sk-..."} /><button type="button" aria-label={showBailianKey ? "隐藏 API Key" : "显示 API Key"} title={showBailianKey ? "隐藏 API Key" : "显示 API Key"} onClick={() => setShowBailianKey((value) => !value)}>{showBailianKey ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label><label className="field-label">业务空间 ID（可选）<input value={bailianWorkspace} onChange={(event) => setBailianWorkspace(event.target.value)} placeholder="留空使用百炼兼容域名" /></label><Notice tone="info" title="账号安全">只需要百炼 API Key，不需要阿里云登录密码、AccessKey ID 或 AccessKey Secret。录音停止后，WebM 音频会发送到百炼完成识别。</Notice><div className="button-row"><Button variant="primary" icon={DeviceFloppy} disabled={!bailianKey.trim()} onClick={saveBailian}>加密保存并启用</Button>{bailianStatus.configured && <Button variant="ghost" icon={Trash} onClick={clearBailian}>删除本机 Key</Button>}</div></>}

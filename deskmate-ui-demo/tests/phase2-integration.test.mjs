@@ -54,6 +54,7 @@ test("configuration exports never include the locally configured STT endpoint", 
   const exported = serializeConfig(state);
   assert.doesNotMatch(exported, /private\.example/);
   assert.equal(JSON.parse(exported).settings.sttEndpoint, "");
+  assert.equal(JSON.parse(exported).runtime, undefined);
 });
 
 test("raw smart custom organizers degrade without losing transcription", async () => {
@@ -64,8 +65,8 @@ test("raw smart custom organizers degrade without losing transcription", async (
 });
 
 test("diagnostics export removes secrets and content", () => {
-  const report = createDiagnosticReport({ schemaVersion: 99, generatedAt: "forged", token: "secret", wifiPassword: "secret", transcript: "spoken", localPath: "private", runtime: "web", nested: { apiKey: "secret", status: "ok" } });
-  const serialized = JSON.stringify(report); assert.doesNotMatch(serialized, /secret|spoken|private/); assert.equal(report.nested.status, "ok"); assert.equal(report.lanAudio.status, "protocol-unconfirmed");
+  const report = createDiagnosticReport({ schemaVersion: 99, generatedAt: "forged", token: "secret", wifiPassword: "secret", transcript: "spoken", localPath: "private", serialNumber: "serial-secret", windowTitle: "private-window", ipAddress: "192.168.1.4", runtime: "web", nested: { apiKey: "secret", status: "ok" } });
+  const serialized = JSON.stringify(report); assert.doesNotMatch(serialized, /secret|spoken|private|192\.168/); assert.equal(report.nested.status, "ok"); assert.equal(report.lanAudio.status, "protocol-unconfirmed");
   assert.equal(report.schemaVersion, 1); assert.notEqual(report.generatedAt, "forged");
 });
 
@@ -85,4 +86,12 @@ test("organizer exception safely falls back to raw transcription", async () => {
   const saved = [];
   const response = await processVoiceRecording({ blob: new Blob(["audio"]), stt: new MockSttAdapter("原始转写"), organizer: { organize: async () => { throw new Error("organizer failed"); } }, saveHistory: async (item) => { saved.push(item); return item; }, output: { output: async () => ({ ok: true }) } });
   assert.equal(response.text, "原始转写"); assert.equal(saved[0].text, "原始转写"); assert.equal(response.organized.fallback, true);
+});
+
+test("active-window output failure falls back to clipboard after history is saved", async () => {
+  const sequence = [];
+  const response = await processVoiceRecording({ blob: new Blob(["audio"]), stt: new MockSttAdapter("回退文本"), organizer: new ConfigurableTextOrganizer(), organizerOptions: { mode: "raw" }, saveHistory: async (item) => { sequence.push("history"); return item; }, outputMode: "active-window", output: { output: async (_text, mode) => { sequence.push(mode); return mode === "active-window" ? { ok: false, reason: "target-window-changed" } : { ok: true, mode }; } } });
+  assert.deepEqual(sequence, ["history", "active-window", "clipboard"]);
+  assert.equal(response.output.ok, true);
+  assert.equal(response.output.fallbackFrom, "active-window");
 });

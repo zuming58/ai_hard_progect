@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { shouldIgnoreToggle } from "../src/hooks/useRecorder.js";
+import { downsampleToPcm16, shouldIgnoreToggle } from "../src/hooks/useRecorder.js";
 import { DesktopBridgeAdapter, EasyInputLanAudioAdapter, TextOutputAdapter } from "../src/adapters/voiceAdapters.js";
 
 const require = createRequire(import.meta.url);
@@ -11,6 +11,13 @@ const { normalizeShortcut } = require("../electron/shortcut.cjs");
 test("the recorder debounce used by the real VoicePage ignores repeated toggles", () => {
   assert.equal(shouldIgnoreToggle(1000, 1050, 100), true);
   assert.equal(shouldIgnoreToggle(1000, 1200, 100), false);
+});
+
+test("microphone samples are converted to 16 kHz PCM without clipping", () => {
+  const pcm = new Int16Array(downsampleToPcm16(new Float32Array([1, 1, 1, -1, -1, -1]), 48000, 16000));
+  assert.equal(pcm.length, 2);
+  assert.ok(pcm[0] > 10000);
+  assert.ok(pcm[1] < 0);
 });
 
 test("desktop shortcuts are normalized and unsafe values are rejected", () => {

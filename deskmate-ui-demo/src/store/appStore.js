@@ -3,14 +3,15 @@ import { expressionPresets, historyItems, keyActions } from "../appData.js";
 import { AI_EVENT_TYPES } from "../adapters/index.js";
 
 export const STORAGE_KEY = "deskmate.app-state";
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const defaultState = {
   schemaVersion: SCHEMA_VERSION,
   history: historyItems,
   vocabulary: { hotwords: ["DeskMate", "ESP32-S3", "Codex", "Claude Code", "Hermes"], rules: [{ from: "桌面宠物", to: "桌宠" }, { from: "克劳德代码", to: "Claude Code" }] },
   keymap: [...keyActions.slice(0, 8)],
-  settings: { microphoneId: "", microphoneSource: "computer", formatting: "smart", customOrganizerRule: "", theme: "system", floating: true, backgroundOpacity: 70, operation: "toggle", startupSound: true, voiceShortcut: "Ctrl+Shift+Space", outputMode: "history", activeWindowOutputEnabled: false, keyDiagnosticsEnabled: false, simulatorEnabled: false, sttMode: "unconfigured", sttEndpoint: "" },
+  settings: { microphoneId: "", microphoneSource: "computer", formatting: "raw", customOrganizerRule: "", theme: "system", floating: true, backgroundOpacity: 70, operation: "toggle", startupSound: true, voiceShortcut: "Ctrl+Shift+Space", boardF22Enabled: true, rightAltEnabled: false, outputMode: "history", activeWindowOutputEnabled: false, keyDiagnosticsEnabled: false, simulatorEnabled: false, sttMode: "unconfigured", sttEndpoint: "" },
+  runtime: { inputBridge: { available: false, process: "unknown", boardConnected: false, restarts: 0, error: "" }, lastTrigger: null },
   expressionMapping: { idle: "sleep", listening: "listen", thinking: "think", working: "focus", waiting_user: "listen", completed: "happy", error: "alert" },
   agentExpressionMapping: { codex: "focus", claude: "listen", hermes: "think", workbody: "happy" },
   currentExpression: "focus",
@@ -31,6 +32,7 @@ function mergeDefaults(value) {
     expressionEditor: { ...defaultState.expressionEditor, ...(value.expressionEditor || {}) },
     motion: { ...defaultState.motion, ...(value.motion || {}) },
     sensors: { ...defaultState.sensors, ...(value.sensors || {}) },
+    runtime: { ...defaultState.runtime, ...(value.runtime || {}), inputBridge: { ...defaultState.runtime.inputBridge, ...(value.runtime?.inputBridge || {}) } },
     aiEvent: { ...defaultState.aiEvent, ...(value.aiEvent || {}) },
   };
 }
@@ -38,6 +40,7 @@ function mergeDefaults(value) {
 export function migrateState(raw) {
   if (!raw || typeof raw !== "object") return structuredClone(defaultState);
   if (raw.schemaVersion === 0) raw = { ...raw, vocabulary: { hotwords: raw.hotwords || [], rules: raw.rules || [] } };
+  if ((raw.schemaVersion ?? 0) < 4) raw = { ...raw, settings: { ...(raw.settings || {}), formatting: "raw" } };
   return mergeDefaults(raw);
 }
 
@@ -53,6 +56,7 @@ export function loadState(storage = globalThis.localStorage) {
 export function serializeConfig(state) {
   const safe = structuredClone(state);
   if (safe.settings) safe.settings.sttEndpoint = "";
+  delete safe.runtime;
   return JSON.stringify(safe, null, 2);
 }
 
@@ -67,6 +71,8 @@ export function validateConfig(value) {
   if (value.vocabulary?.rules && (!Array.isArray(value.vocabulary.rules) || value.vocabulary.rules.some((item) => !item || typeof item.from !== "string" || typeof item.to !== "string"))) throw new Error("替换规则格式无效");
   if (value.settings !== undefined && (!value.settings || typeof value.settings !== "object" || Array.isArray(value.settings))) throw new Error("设置格式无效");
   if (value.settings?.voiceShortcut !== undefined && (typeof value.settings.voiceShortcut !== "string" || value.settings.voiceShortcut.length > 64)) throw new Error("语音快捷键格式无效");
+  if (value.settings?.boardF22Enabled !== undefined && typeof value.settings.boardF22Enabled !== "boolean") throw new Error("板子 F22 设置无效");
+  if (value.settings?.rightAltEnabled !== undefined && typeof value.settings.rightAltEnabled !== "boolean") throw new Error("右 Alt 设置无效");
   if (value.settings?.outputMode !== undefined && !["history", "clipboard"].includes(value.settings.outputMode)) throw new Error("文字输出方式无效");
   if (value.settings?.activeWindowOutputEnabled !== undefined && typeof value.settings.activeWindowOutputEnabled !== "boolean") throw new Error("当前窗口输出设置无效");
   if (value.settings?.keyDiagnosticsEnabled !== undefined && typeof value.settings.keyDiagnosticsEnabled !== "boolean") throw new Error("按键诊断设置无效");
@@ -113,7 +119,7 @@ export function reduceAppState(state, action) {
 const AppStoreContext = createContext(null);
 export function AppStoreProvider({ children }) {
   const [state, dispatch] = useReducer(reduceAppState, undefined, loadState);
-  useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* storage can be unavailable */ } }, [state]);
+  useEffect(() => { try { const persisted = structuredClone(state); delete persisted.runtime; localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted)); } catch { /* storage can be unavailable */ } }, [state]);
   const patch = useCallback((value) => dispatch({ type: "patch", value }), []);
   const reset = useCallback(() => dispatch({ type: "reset" }), []);
   const replace = useCallback((value) => {

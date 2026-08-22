@@ -5,9 +5,10 @@ import { AI_EVENT_TYPES, AgentStatusAdapter } from "../src/adapters/index.js";
 
 test("migrates legacy storage to current schema without dropping defaults", () => {
   const result = migrateState({ schemaVersion: 0, hotwords: ["旧词"], rules: [] });
-  assert.equal(result.schemaVersion, 3);
+  assert.equal(result.schemaVersion, 4);
   assert.deepEqual(result.vocabulary.hotwords, ["旧词"]);
   assert.equal(result.settings.theme, defaultState.settings.theme);
+  assert.equal(result.settings.formatting, "raw");
   assert.equal(result.keymap.length, 8);
 });
 
@@ -20,6 +21,7 @@ test("rejects malformed imported configurations", () => {
   assert.throws(() => validateConfig({ expressionMapping: { working: "missing" } }), /状态表情映射/);
   assert.throws(() => validateConfig({ schemaVersion: 99 }), /更高版本/);
   assert.throws(() => validateConfig({ settings: { sttMode: "pretend-connected" } }), /STT 模式/);
+  assert.throws(() => validateConfig({ settings: { rightAltEnabled: "yes" } }), /右 Alt/);
 });
 
 test("falls back to defaults when persisted storage has an invalid shape", () => {
